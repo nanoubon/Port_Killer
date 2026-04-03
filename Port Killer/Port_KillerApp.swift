@@ -11,7 +11,7 @@ import SwiftUI
 @main
 struct Port_KillerApp: App {
     var body: some Scene {
-        MenuBarExtra("Port Killer", systemImage: "network") {
+        MenuBarExtra("Port Killer", image: "MenuBarIcon") {
             ContentView()
         }
         .menuBarExtraStyle(.window) // Uses a popover style window instead of a standard menu list

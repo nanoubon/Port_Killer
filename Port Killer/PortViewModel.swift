@@ -23,7 +23,13 @@ class PortViewModel: ObservableObject {
                 return
             }
 
-            var newPorts: [PortItem] = []
+            // Parse lsof output on background thread (no AppKit access here)
+            struct ParsedPort {
+                let processName: String
+                let pid: String
+                let port: String
+            }
+            var parsed: [ParsedPort] = []
             let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
 
             if lines.count <= 1 {
@@ -42,29 +48,26 @@ class PortViewModel: ObservableObject {
                     let pid = columns[1]
                     let nameColumn = columns[8] // Example: *:8080 or 127.0.0.1:8080
 
-                    // Extract the port number from the name column
                     if let portRange = nameColumn.range(of: ":\\d+", options: .regularExpression) {
                         let portString = String(nameColumn[portRange].dropFirst()) // Remove the ':'
-
-                        var appIcon: NSImage? = nil
-
-                        // NSWorkspace must be accessed on the main thread
-                        if let pidInt = Int32(pid) {
-                            appIcon = NSWorkspace.shared.runningApplications
-                                .first(where: { $0.processIdentifier == pidInt })?.icon
-                        }
-
-                        let item = PortItem(processName: processName, pid: pid, port: portString, protocolName: "TCP", icon: appIcon)
-
-                        // Avoid duplicating ports on different interfaces (e.g. IPv4 and IPv6)
-                        if !newPorts.contains(where: { $0.port == item.port && $0.processName == item.processName }) {
-                            newPorts.append(item)
+                        let entry = ParsedPort(processName: processName, pid: pid, port: portString)
+                        if !parsed.contains(where: { $0.port == entry.port && $0.processName == entry.processName }) {
+                            parsed.append(entry)
                         }
                     }
                 }
             }
 
+            // NSWorkspace must be accessed on the main thread
             DispatchQueue.main.async {
+                let runningApps = NSWorkspace.shared.runningApplications
+                var newPorts: [PortItem] = []
+                for entry in parsed {
+                    let icon = Int32(entry.pid).flatMap { pidInt in
+                        runningApps.first(where: { $0.processIdentifier == pidInt })?.icon
+                    }
+                    newPorts.append(PortItem(processName: entry.processName, pid: entry.pid, port: entry.port, protocolName: "TCP", icon: icon))
+                }
                 // Parentheses required: ?? has lower precedence than <
                 self.ports = newPorts.sorted { (Int($0.port) ?? 0) < (Int($1.port) ?? 0) }
                 if self.ports.isEmpty {
