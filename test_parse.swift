@@ -38,11 +38,11 @@ print("Raw output first 200 chars:")
 print(String(output.prefix(200)))
 
 var newPorts: [PortItem] = []
-let lines = output.components(separatedBy: .newlines).filter { '/Users/nano/Documents/Projects/Port Killer/Port Killer'0.isEmpty }
+let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
 
 print("\nParsing lines (skipping first)...")
 for line in lines.dropFirst() {
-    let columns = line.components(separatedBy: .whitespaces).filter { '/Users/nano/Documents/Projects/Port Killer/Port Killer'0.isEmpty }
+    let columns = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
     
     if columns.count >= 9 {
         let processName = columns[0]

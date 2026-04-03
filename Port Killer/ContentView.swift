@@ -82,6 +82,7 @@ struct ContentView: View {
                     Text(searchText.isEmpty ? "No active listening ports found." : "No matching ports.")
                         .foregroundColor(.secondary)
                     
+                    #if DEBUG
                     if searchText.isEmpty {
                         Text("Debug: \(viewModel.debugMessage)")
                             .font(.caption2)
@@ -89,6 +90,7 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                             .padding()
                     }
+                    #endif
                         
                     Spacer()
                 }
