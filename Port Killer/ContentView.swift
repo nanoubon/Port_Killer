@@ -1,8 +1,10 @@
 import AppKit
 import SwiftUI
+import StoreKit
 
 struct ContentView: View {
     @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
 
     var body: some View {
         WorkspaceShellView()
@@ -12,6 +14,7 @@ struct ContentView: View {
 
 struct WorkspaceShellView: View {
     @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
 
     private var onboardingBinding: Binding<Bool> {
         Binding(
@@ -48,12 +51,19 @@ struct WorkspaceShellView: View {
         .sheet(isPresented: $viewModel.showAppStorePreview) {
             AppStorePreviewView()
                 .environmentObject(viewModel)
+                .environmentObject(proStore)
                 .frame(minWidth: 1040, minHeight: 800)
         }
         .sheet(isPresented: onboardingBinding) {
             OnboardingView()
                 .environmentObject(viewModel)
                 .frame(minWidth: 980, minHeight: 740)
+        }
+        .onAppear {
+            viewModel.setProUnlocked(proStore.isProUnlocked)
+        }
+        .onChange(of: proStore.isProUnlocked) { _, isUnlocked in
+            viewModel.setProUnlocked(isUnlocked)
         }
     }
 }
@@ -97,6 +107,7 @@ struct WorkspaceBackground: View {
 
 struct WorkspaceSidebarView: View {
     @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -126,14 +137,19 @@ struct WorkspaceSidebarView: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Professional performance analytics enabled.")
+                Text(proStore.isProUnlocked ? "Pro features unlocked." : "Professional performance analytics enabled.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.pkMuted)
 
                 Button {
-                    viewModel.setSection(.proFeatures)
+                    if proStore.isProUnlocked {
+                        viewModel.setSection(.proFeatures)
+                    } else {
+                        proStore.unlockProImmediately()
+                        viewModel.setSection(.proFeatures)
+                    }
                 } label: {
-                    Text("Upgrade to Pro")
+                    Text(proStore.isProUnlocked ? "Manage Pro" : "Upgrade to Pro")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryActionButtonStyle())
@@ -998,74 +1014,110 @@ struct HistoryRowView: View {
 
 struct ProFeaturesSectionView: View {
     @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
+    @State private var ruleName = ""
+    @State private var rulePort = ""
+    @State private var ruleProcess = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            HStack {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Precision Mastery for")
-                        .font(.system(size: 34, weight: .black))
-                        .foregroundStyle(Color.pkText)
-                    Text("Professional Power Users")
-                        .font(.system(size: 34, weight: .black))
-                        .foregroundStyle(Color.pkPrimary)
-                    Text("Level up your local development environment with industrial-grade monitoring, automation, and analytics.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.pkMuted)
-                        .frame(maxWidth: 620, alignment: .leading)
-                }
+            header
 
-                Spacer()
+            if proStore.isProUnlocked {
+                ProUnlockedDashboardView(
+                    ruleName: $ruleName,
+                    rulePort: $rulePort,
+                    ruleProcess: $ruleProcess
+                )
+                .environmentObject(viewModel)
+                .environmentObject(proStore)
+            } else {
+                ProUpsellDashboardView()
+                    .environmentObject(viewModel)
+                    .environmentObject(proStore)
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(proStore.isProUnlocked ? "Pro unlocked for this Mac" : "Precision Mastery for")
+                    .font(.system(size: 34, weight: .black))
+                    .foregroundStyle(Color.pkText)
+                Text(proStore.isProUnlocked ? "All premium controls are active." : "Professional Power Users")
+                    .font(.system(size: 34, weight: .black))
+                    .foregroundStyle(Color.pkPrimary)
+                Text(proStore.isProUnlocked ? "Advanced monitoring, automation, and sync tools are now available." : "Level up your local development environment with industrial-grade monitoring, automation, and analytics.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.pkMuted)
+                    .frame(maxWidth: 620, alignment: .leading)
             }
 
+            Spacer()
+        }
+    }
+}
+
+struct ProUpsellDashboardView: View {
+    @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2), spacing: 14) {
                 FeatureCard(title: "Real-time Port Monitoring", subtitle: "Instant visual tracking of traffic spikes and socket status.", symbol: "chart.line.uptrend.xyaxis", tint: .primary)
-                FeatureCard(title: "Custom Auto-Kill Scripts", subtitle: "Define complex logic to automatically terminate processes based on memory leaks, timeout duration, or specific PIDs.", symbol: "terminal", tint: .secondary)
-                FeatureCard(title: "Kill History", subtitle: "Full audit log of every killed process.", symbol: "clock.arrow.circlepath", tint: .warning)
-                FeatureCard(title: "Multi-Environment Sync", subtitle: "Sync your custom configurations across your workstation and laptop seamlessly.", symbol: "airplane", tint: .primary)
+                FeatureCard(title: "Custom Auto-Kill Scripts", subtitle: "Define rules that automatically terminate noisy ports and repeat offenders.", symbol: "terminal", tint: .secondary)
+                FeatureCard(title: "Kill History", subtitle: "Full audit log of every killed process with local persistence.", symbol: "clock.arrow.circlepath", tint: .warning)
+                FeatureCard(title: "Multi-Environment Sync", subtitle: "Export and import your saved port profile between Macs.", symbol: "airplane", tint: .primary)
             }
 
             CardShell(fill: Color.pkCard, radius: 18) {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("The Professional Choice")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.pkText)
+                    HStack {
+                        Text("Choose your Pro plan")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color.pkText)
+                        Spacer()
+                        if proStore.isLoadingProducts {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
 
-                    ComparisonTableView()
-                }
-            }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2), spacing: 14) {
+                        ForEach(proStore.sortedProducts, id: \.id) { product in
+                            ProProductCard(product: product)
+                        }
+                    }
 
-            HStack(spacing: 14) {
-                PricingCard(
-                    title: "Monthly Plan",
-                    subtitle: "Full flexibility, cancel anytime.",
-                    price: "$4.99",
-                    footnote: "Subscribe Now",
-                    buttonLabel: "Subscribe Now",
-                    isFeatured: false
-                ) {
-                    viewModel.openAppStorePreview()
-                }
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await proStore.restorePurchases() }
+                        } label: {
+                            Text("Restore Purchases")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(SecondaryActionButtonStyle())
 
-                PricingCard(
-                    title: "Lifetime Purchase",
-                    subtitle: "Pay once, own forever.",
-                    price: "$19.99",
-                    footnote: "Secure checkout via Stripe",
-                    buttonLabel: "Unlock Lifetime Pro",
-                    isFeatured: true
-                ) {
-                    viewModel.openAppStorePreview()
+                        Button {
+                            proStore.openManageSubscriptions()
+                        } label: {
+                            Text("Manage Subscription")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(TertiaryActionButtonStyle())
+                    }
                 }
             }
 
             CardShell(fill: Color.pkSurface.opacity(0.78), radius: 16) {
                 HStack(spacing: 18) {
-                    Text("TRUSTED BY DEVELOPERS AT")
+                    Text("PRO INCLUDES")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color.pkMuted)
                     Spacer()
-                    ForEach(["DEVSTACK", "NEBULA", "KUBEFLOW", "SYNTAX"], id: \.self) { label in
+                    ForEach(["LIVE MONITORING", "AUTO-KILL", "SYNC"], id: \.self) { label in
                         Text(label)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.pkMuted.opacity(0.8))
@@ -1073,6 +1125,251 @@ struct ProFeaturesSectionView: View {
                 }
             }
         }
+    }
+}
+
+struct ProUnlockedDashboardView: View {
+    @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
+    @Binding var ruleName: String
+    @Binding var rulePort: String
+    @Binding var ruleProcess: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
+                ForEach(viewModel.proSnapshotMetrics) { metric in
+                    MetricCardView(metric: metric)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 18) {
+                CardShell(fill: Color.pkCard, radius: 18) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SectionHeading(title: "LIVE MONITORING", trailing: "PRO CONTROL")
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Auto refresh")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color.pkText)
+                                Spacer()
+                                Toggle("", isOn: Binding(
+                                    get: { viewModel.isAutoRefreshEnabled },
+                                    set: { viewModel.setAutoRefreshEnabled($0) }
+                                ))
+                                .labelsHidden()
+                            }
+
+                            HStack {
+                                Text("Refresh interval")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color.pkText)
+                                Spacer()
+                                Text("\(Int(viewModel.refreshIntervalSeconds)) s")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.pkPrimary)
+                            }
+
+                            Slider(value: Binding(
+                                get: { viewModel.refreshIntervalSeconds },
+                                set: { viewModel.setRefreshIntervalSeconds($0) }
+                            ), in: 3...60, step: 1)
+
+                            HStack(spacing: 10) {
+                                SecondaryActionButton(title: "Refresh Now", symbol: "arrow.clockwise") {
+                                    viewModel.refresh()
+                                }
+
+                                SecondaryActionButton(title: "Open History", symbol: "clock.arrow.circlepath") {
+                                    viewModel.setSection(.history)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CardShell(fill: Color.pkCard, radius: 18) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SectionHeading(title: "AUTO-KILL RULES", trailing: "BACKGROUND ENFORCEMENT")
+
+                        VStack(spacing: 10) {
+                            TextField("Rule name", text: $ruleName)
+                            TextField("Port contains", text: $rulePort)
+                            TextField("Process contains", text: $ruleProcess)
+                        }
+                        .textFieldStyle(.roundedBorder)
+
+                        Button {
+                            viewModel.addAutoKillRule(name: ruleName, portQuery: rulePort, processQuery: ruleProcess)
+                            ruleName = ""
+                            rulePort = ""
+                            ruleProcess = ""
+                        } label: {
+                            Text("Add Rule")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryActionButtonStyle())
+
+                        VStack(spacing: 10) {
+                            ForEach(viewModel.autoKillRules) { rule in
+                                AutoKillRuleRow(rule: rule)
+                            }
+                        }
+                    }
+                }
+            }
+
+            HStack(alignment: .top, spacing: 18) {
+                CardShell(fill: Color.pkCard, radius: 18) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SectionHeading(title: "PROFILE SYNC", trailing: "EXPORT / IMPORT")
+                        Text("Save your bookmarks, rules, refresh interval, and kill history to move the setup between machines.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.pkMuted)
+
+                        HStack(spacing: 10) {
+                            SecondaryActionButton(title: "Export Profile", symbol: "square.and.arrow.up") {
+                                viewModel.exportProProfile()
+                            }
+
+                            SecondaryActionButton(title: "Import Profile", symbol: "square.and.arrow.down") {
+                                viewModel.importProProfile()
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            SecondaryActionButton(title: "Manage Subscription", symbol: "gearshape") {
+                                proStore.openManageSubscriptions()
+                            }
+
+                            SecondaryActionButton(title: "Restore", symbol: "arrow.clockwise") {
+                                Task { await proStore.restorePurchases() }
+                            }
+                        }
+                    }
+                }
+
+                CardShell(fill: Color.pkCard, radius: 18) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SectionHeading(title: "PRO STATUS", trailing: "ENTITLEMENT")
+                        Text("Unlocked on this Mac")
+                            .font(.system(size: 20, weight: .black))
+                            .foregroundStyle(Color.pkSecondary)
+                        Text(proStore.statusMessage ?? "Active entitlement detected through StoreKit.")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(Color.pkMuted)
+
+                        ComparisonTableView()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ProProductCard: View {
+    let product: Product
+
+    var body: some View {
+        CardShell(fill: Color.pkElevated, radius: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(product.displayName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.pkText)
+                Text(product.description)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.pkMuted)
+                Text(product.displayPrice)
+                    .font(.system(size: 28, weight: .black))
+                    .foregroundStyle(Color.pkPrimary)
+                Text(product.id.contains("monthly") ? "Best for short-term projects" : "Best value for long-term use")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.pkMuted.opacity(0.7))
+            }
+        }
+    }
+}
+
+struct ProProductPurchaseCard: View {
+    let product: Product
+    let action: () -> Void
+
+    var body: some View {
+        CardShell(fill: Color.pkElevated, radius: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(product.displayName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.pkText)
+                Text(product.description)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.pkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(product.displayPrice)
+                    .font(.system(size: 28, weight: .black))
+                    .foregroundStyle(Color.pkPrimary)
+
+                Button(action: action) {
+                    Text(product.id.contains("monthly") ? "Subscribe Now" : "Unlock Lifetime Pro")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryActionButtonStyle())
+            }
+        }
+    }
+}
+
+struct AutoKillRuleRow: View {
+    @EnvironmentObject private var viewModel: PortViewModel
+    let rule: AutoKillRule
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(rule.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.pkText)
+                Text(rule.summary)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.pkMuted)
+            }
+
+            Spacer()
+
+            Button {
+                viewModel.toggleAutoKillRule(rule)
+            } label: {
+                Text(rule.isEnabled ? "Enabled" : "Disabled")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .foregroundStyle(rule.isEnabled ? Color.pkSecondary : Color.pkMuted)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(rule.isEnabled ? Color.pkSecondary.opacity(0.12) : Color.pkSurface)
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                viewModel.removeAutoKillRule(rule)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.pkDangerText)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.pkDanger.opacity(0.15))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.pkSurface)
+        )
     }
 }
 
@@ -1206,6 +1503,7 @@ struct PricingCard: View {
 
 struct AppStorePreviewView: View {
     @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var proStore: ProPurchaseManager
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1282,6 +1580,47 @@ struct AppStorePreviewView: View {
                         FeatureBadge(title: "Kill processes safely", subtitle: "Advanced verification layer prevents errors", symbol: "shield.checkerboard")
                         FeatureBadge(title: "Pinned common ports", subtitle: "Keep your dev stack in easy reach", symbol: "pin.fill")
                         FeatureBadge(title: "Menu bar quick access", subtitle: "Kill ports without switching focus", symbol: "menubar.rectangle")
+                    }
+
+                    CardShell(fill: Color.pkCard, radius: 22) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text(proStore.isProUnlocked ? "Pro is already unlocked" : "Choose your Pro plan")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(Color.pkText)
+                                Spacer()
+                                if proStore.isLoadingProducts {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            }
+
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2), spacing: 14) {
+                                ForEach(proStore.sortedProducts, id: \.id) { product in
+                                    ProProductPurchaseCard(product: product) {
+                                        Task { await proStore.purchase(product) }
+                                    }
+                                }
+                            }
+
+                            HStack(spacing: 12) {
+                                Button {
+                                    Task { await proStore.restorePurchases() }
+                                } label: {
+                                    Text("Restore Purchases")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(SecondaryActionButtonStyle())
+
+                                Button {
+                                    proStore.openManageSubscriptions()
+                                } label: {
+                                    Text("Manage Subscription")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(TertiaryActionButtonStyle())
+                            }
+                        }
                     }
                 }
                 .padding(24)
@@ -1509,95 +1848,98 @@ struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Port Killer")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.pkText)
-                Spacer()
-                HeaderIconButton(systemName: "clock.arrow.circlepath") {
-                    viewModel.setSection(.history)
-                }
-                .frame(width: 22, height: 22)
-                HeaderIconButton(systemName: "line.3.horizontal.decrease.circle") {
-                    viewModel.refresh()
-                }
-                .frame(width: 22, height: 22)
-                HeaderIconButton(systemName: "arrow.clockwise") {
-                    viewModel.refresh()
-                }
-                .frame(width: 22, height: 22)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.pkSurface.opacity(0.9))
-
-            VStack(spacing: 10) {
-                SearchBar(text: $viewModel.searchText, placeholder: "Search ports or PIDs...")
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("SYSTEM ACTIVITY")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.pkMuted)
-                        Spacer()
-                        Text(viewModel.visiblePorts.isEmpty ? "STANDBY" : "HEALTHY")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(viewModel.visiblePorts.isEmpty ? Color.pkMuted : Color.pkSecondary)
-                    }
-                    HeatmapStripView(states: viewModel.activityHeatmapState)
-                        .frame(height: 10)
-                }
-                .padding(.top, 4)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color.pkSurface.opacity(0.82))
-
-            VStack(alignment: .leading, spacing: 0) {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 0) {
                 HStack {
-                    Text("ACTIVE PORTS")
+                    Text("Port Killer")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.pkText)
                     Spacer()
-                    Text("PID")
+                    HeaderIconButton(systemName: "clock.arrow.circlepath") {
+                        viewModel.setSection(.history)
+                    }
+                    .frame(width: 22, height: 22)
+                    HeaderIconButton(systemName: "line.3.horizontal.decrease.circle") {
+                        viewModel.refresh()
+                    }
+                    .frame(width: 22, height: 22)
+                    HeaderIconButton(systemName: "arrow.clockwise") {
+                        viewModel.refresh()
+                    }
+                    .frame(width: 22, height: 22)
                 }
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.pkMuted)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color.pkSurface.opacity(0.9))
+
+                VStack(spacing: 10) {
+                    SearchBar(text: $viewModel.searchText, placeholder: "Search ports or PIDs...")
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("SYSTEM ACTIVITY")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.pkMuted)
+                            Spacer()
+                            Text(viewModel.visiblePorts.isEmpty ? "STANDBY" : "HEALTHY")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(viewModel.visiblePorts.isEmpty ? Color.pkMuted : Color.pkSecondary)
+                        }
+                        HeatmapStripView(states: viewModel.activityHeatmapState)
+                            .frame(height: 10)
+                    }
+                    .padding(.top, 4)
+                }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
+                .background(Color.pkSurface.opacity(0.82))
 
-                VStack(spacing: 0) {
-                    ForEach(viewModel.visiblePorts.prefix(5)) { port in
-                        MenuPortRowView(port: port)
-                            .environmentObject(viewModel)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("ACTIVE PORTS")
+                        Spacer()
+                        Text("PID")
+                    }
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.pkMuted)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+
+                    VStack(spacing: 0) {
+                        ForEach(viewModel.visiblePorts) { port in
+                            MenuPortRowView(port: port)
+                                .environmentObject(viewModel)
+                        }
                     }
                 }
-            }
-            .background(Color.pkElevated.opacity(0.55))
+                .background(Color.pkElevated.opacity(0.55))
 
-            VStack(spacing: 10) {
-                Button {
-                    viewModel.killSelectedPorts()
-                } label: {
-                    Text("Kill All High Usage")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryActionButtonStyle())
+                VStack(spacing: 10) {
+                    Button {
+                        viewModel.killSelectedPorts()
+                    } label: {
+                        Text("Kill All High Usage")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryActionButtonStyle())
 
-                Button {
-                    dismiss()
-                    openWindow(id: "main")
-                    NSApplication.shared.activate(ignoringOtherApps: true)
-                } label: {
-                    Text("Open Full App")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.pkMuted)
-                        .frame(maxWidth: .infinity)
+                    Button {
+                        dismiss()
+                        openWindow(id: "main")
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                    } label: {
+                        Text("Open Full App")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.pkMuted)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(14)
+                .background(Color.pkSurface.opacity(0.92))
             }
-            .padding(14)
-            .background(Color.pkSurface.opacity(0.92))
         }
-        .frame(width: 320)
+        .scrollIndicators(.visible)
+        .frame(width: 320, height: 560)
         .background(Color.pkSidebar)
     }
 }
@@ -2024,6 +2366,7 @@ extension Color {
 #Preview {
     ContentView()
         .environmentObject(PortViewModel())
+        .environmentObject(ProPurchaseManager())
         .frame(width: 1360, height: 960)
 }
 

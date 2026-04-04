@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import UniformTypeIdentifiers
 import SwiftUI
 
 @MainActor
@@ -12,9 +13,11 @@ final class PortViewModel: ObservableObject {
     @Published var selectedPortIDs: Set<String> = []
     @Published var pinnedBookmarks: [PortBookmark] = []
     @Published var killHistory: [KillHistoryEntry] = []
+    @Published var autoKillRules: [AutoKillRule] = []
     @Published var hasCompletedOnboarding: Bool = false
     @Published var isProUnlocked: Bool = false
     @Published var isAutoRefreshEnabled: Bool = true
+    @Published var refreshIntervalSeconds: Double = 8
     @Published var showAppStorePreview: Bool = false
     @Published var debugMessage: String = "Initializing..."
     @Published var lastRefreshAt: Date?
@@ -25,9 +28,11 @@ final class PortViewModel: ObservableObject {
     private enum StorageKey {
         static let pinnedBookmarks = "PortKiller.pinnedBookmarks"
         static let killHistory = "PortKiller.killHistory"
+        static let autoKillRules = "PortKiller.autoKillRules"
         static let hasCompletedOnboarding = "PortKiller.hasCompletedOnboarding"
         static let isProUnlocked = "PortKiller.isProUnlocked"
         static let isAutoRefreshEnabled = "PortKiller.isAutoRefreshEnabled"
+        static let refreshIntervalSeconds = "PortKiller.refreshIntervalSeconds"
     }
 
     init() {
@@ -134,6 +139,29 @@ final class PortViewModel: ObservableObject {
         ]
     }
 
+    var proSnapshotMetrics: [DashboardMetric] {
+        [
+            DashboardMetric(
+                title: "AUTO-KILL RULES",
+                value: "\(autoKillRules.filter(\.isEnabled).count)",
+                tint: .danger,
+                detail: "Rules active in the background"
+            ),
+            DashboardMetric(
+                title: "REFRESH INTERVAL",
+                value: "\(Int(refreshIntervalSeconds))s",
+                tint: .primary,
+                detail: "Pro-only live monitoring cadence"
+            ),
+            DashboardMetric(
+                title: "PROFILE SYNC",
+                value: "Local",
+                tint: .secondary,
+                detail: "Export/import between machines"
+            )
+        ]
+    }
+
     var historyFeed: [KillHistoryEntry] {
         if killHistory.isEmpty {
             return [
@@ -169,6 +197,11 @@ final class PortViewModel: ObservableObject {
 
     func openAppStorePreview() {
         showAppStorePreview = true
+    }
+
+    func setProUnlocked(_ unlocked: Bool) {
+        isProUnlocked = unlocked
+        persistBool(unlocked, forKey: StorageKey.isProUnlocked)
     }
 
     func completeOnboarding() {
@@ -263,6 +296,97 @@ final class PortViewModel: ObservableObject {
         configureAutoRefresh()
     }
 
+    func setRefreshIntervalSeconds(_ seconds: Double) {
+        refreshIntervalSeconds = max(3, min(seconds, 60))
+        persistDouble(refreshIntervalSeconds, forKey: StorageKey.refreshIntervalSeconds)
+        configureAutoRefresh()
+    }
+
+    func addAutoKillRule(name: String, portQuery: String, processQuery: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPort = portQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedProcess = processQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedName.isEmpty || !trimmedPort.isEmpty || !trimmedProcess.isEmpty else { return }
+
+        autoKillRules.insert(
+            AutoKillRule(
+                name: trimmedName.isEmpty ? "Rule \(autoKillRules.count + 1)" : trimmedName,
+                portQuery: trimmedPort,
+                processQuery: trimmedProcess,
+                isEnabled: true,
+                action: .kill
+            ),
+            at: 0
+        )
+        persistAutoKillRules()
+    }
+
+    func toggleAutoKillRule(_ rule: AutoKillRule) {
+        guard let index = autoKillRules.firstIndex(where: { $0.id == rule.id }) else { return }
+        autoKillRules[index].isEnabled.toggle()
+        persistAutoKillRules()
+    }
+
+    func removeAutoKillRule(_ rule: AutoKillRule) {
+        autoKillRules.removeAll { $0.id == rule.id }
+        persistAutoKillRules()
+    }
+
+    func exportProProfile() {
+        let profile = ProProfile(
+            pinnedBookmarks: pinnedBookmarks,
+            killHistory: killHistory,
+            autoKillRules: autoKillRules,
+            refreshIntervalSeconds: refreshIntervalSeconds,
+            isAutoRefreshEnabled: isAutoRefreshEnabled
+        )
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "PortKiller-ProProfile.json"
+        panel.canCreateDirectories = true
+
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let data = try JSONEncoder.portKillerProfile.encode(profile)
+                try data.write(to: url, options: .atomic)
+                debugMessage = "Exported Pro profile."
+            } catch {
+                debugMessage = "Failed to export Pro profile."
+            }
+        }
+    }
+
+    func importProProfile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let data = try Data(contentsOf: url)
+                let profile = try JSONDecoder.portKillerProfile.decode(ProProfile.self, from: data)
+                pinnedBookmarks = profile.pinnedBookmarks
+                killHistory = profile.killHistory
+                autoKillRules = profile.autoKillRules
+                isAutoRefreshEnabled = profile.isAutoRefreshEnabled
+                refreshIntervalSeconds = max(3, min(profile.refreshIntervalSeconds, 60))
+                persistPinnedBookmarks()
+                persistKillHistory()
+                persistAutoKillRules()
+                persistBool(isAutoRefreshEnabled, forKey: StorageKey.isAutoRefreshEnabled)
+                persistDouble(refreshIntervalSeconds, forKey: StorageKey.refreshIntervalSeconds)
+                configureAutoRefresh()
+                debugMessage = "Imported Pro profile."
+            } catch {
+                debugMessage = "Failed to import Pro profile."
+            }
+        }
+    }
+
     func fetchActivePorts() {
         debugMessage = "Fetching ports..."
         lastRefreshAt = Date()
@@ -347,6 +471,7 @@ final class PortViewModel: ObservableObject {
                 self.debugMessage = self.ports.isEmpty
                     ? "No listening ports matched the current scan."
                     : "Successfully fetched \(self.ports.count) ports."
+                self.applyAutoKillRules()
             }
         }
     }
@@ -387,15 +512,17 @@ final class PortViewModel: ObservableObject {
         hasCompletedOnboarding = persistBool(forKey: StorageKey.hasCompletedOnboarding)
         isProUnlocked = persistBool(forKey: StorageKey.isProUnlocked)
         isAutoRefreshEnabled = persistBool(forKey: StorageKey.isAutoRefreshEnabled, defaultValue: true)
+        refreshIntervalSeconds = persistDouble(forKey: StorageKey.refreshIntervalSeconds, defaultValue: 8)
         pinnedBookmarks = loadValue([PortBookmark].self, forKey: StorageKey.pinnedBookmarks) ?? []
         killHistory = loadValue([KillHistoryEntry].self, forKey: StorageKey.killHistory) ?? []
+        autoKillRules = loadValue([AutoKillRule].self, forKey: StorageKey.autoKillRules) ?? []
     }
 
     private func configureAutoRefresh() {
         autoRefreshCancellable?.cancel()
         guard isAutoRefreshEnabled else { return }
 
-        autoRefreshCancellable = Timer.publish(every: 8, on: .main, in: .common)
+        autoRefreshCancellable = Timer.publish(every: refreshIntervalSeconds, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.fetchActivePorts()
@@ -410,6 +537,10 @@ final class PortViewModel: ObservableObject {
         persistValue(killHistory, forKey: StorageKey.killHistory)
     }
 
+    private func persistAutoKillRules() {
+        persistValue(autoKillRules, forKey: StorageKey.autoKillRules)
+    }
+
     private func persistBool(_ value: Bool, forKey key: String) {
         UserDefaults.standard.set(value, forKey: key)
     }
@@ -421,6 +552,17 @@ final class PortViewModel: ObservableObject {
         return UserDefaults.standard.bool(forKey: key)
     }
 
+    private func persistDouble(_ value: Double, forKey key: String) {
+        UserDefaults.standard.set(value, forKey: key)
+    }
+
+    private func persistDouble(forKey key: String, defaultValue: Double) -> Double {
+        if UserDefaults.standard.object(forKey: key) == nil {
+            return defaultValue
+        }
+        return UserDefaults.standard.double(forKey: key)
+    }
+
     private func loadValue<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
@@ -429,6 +571,19 @@ final class PortViewModel: ObservableObject {
     private func persistValue<T: Encodable>(_ value: T, forKey key: String) {
         guard let data = try? JSONEncoder().encode(value) else { return }
         UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private func applyAutoKillRules() {
+        guard isProUnlocked, !autoKillRules.isEmpty, !ports.isEmpty else { return }
+
+        let livePorts = ports
+        var matchedPortIDs = Set<String>()
+        for rule in autoKillRules where rule.isEnabled {
+            for port in livePorts where rule.matches(port) {
+                guard matchedPortIDs.insert(port.id).inserted else { continue }
+                killProcess(pid: port.pid, port: port)
+            }
+        }
     }
 
     private var demoPorts: [PortItem] {
@@ -502,4 +657,82 @@ struct QuickAction: Identifiable, Hashable {
     let title: String
     let subtitle: String
     let symbol: String
+}
+
+struct AutoKillRule: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var portQuery: String
+    var processQuery: String
+    var isEnabled: Bool
+    var action: AutoKillAction
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        portQuery: String = "",
+        processQuery: String = "",
+        isEnabled: Bool = true,
+        action: AutoKillAction = .kill
+    ) {
+        self.id = id
+        self.name = name
+        self.portQuery = portQuery
+        self.processQuery = processQuery
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+
+    func matches(_ port: PortItem) -> Bool {
+        let portMatches = portQuery.isEmpty || port.port.localizedCaseInsensitiveContains(portQuery)
+        let processMatches = processQuery.isEmpty || port.processName.localizedCaseInsensitiveContains(processQuery)
+        return portMatches && processMatches
+    }
+
+    var summary: String {
+        let portLabel = portQuery.isEmpty ? "*" : portQuery
+        let processLabel = processQuery.isEmpty ? "*" : processQuery
+        return "\(action.title) port:\(portLabel) process:\(processLabel)"
+    }
+}
+
+enum AutoKillAction: String, Codable, CaseIterable, Identifiable {
+    case kill
+    case alert
+    case pin
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .kill: return "Kill"
+        case .alert: return "Alert"
+        case .pin: return "Pin"
+        }
+    }
+}
+
+struct ProProfile: Codable, Hashable {
+    var pinnedBookmarks: [PortBookmark]
+    var killHistory: [KillHistoryEntry]
+    var autoKillRules: [AutoKillRule]
+    var refreshIntervalSeconds: Double
+    var isAutoRefreshEnabled: Bool
+}
+
+extension JSONEncoder {
+    static var portKillerProfile: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+extension JSONDecoder {
+    static var portKillerProfile: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
 }

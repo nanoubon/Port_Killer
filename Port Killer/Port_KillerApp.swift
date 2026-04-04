@@ -11,16 +11,19 @@ import SwiftUI
 @main
 struct Port_KillerApp: App {
     @StateObject private var viewModel = PortViewModel()
+    @StateObject private var proStore = ProPurchaseManager()
 
     var body: some Scene {
         WindowGroup(id: "main") {
             ContentView()
                 .environmentObject(viewModel)
+                .environmentObject(proStore)
         }
 
         MenuBarExtra {
             MenuBarPopoverView()
                 .environmentObject(viewModel)
+                .environmentObject(proStore)
         } label: {
             Image("MenuBarIcon")
                 .renderingMode(.original)
