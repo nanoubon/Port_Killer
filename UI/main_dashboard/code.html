@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&amp;family=Space+Grotesk:wght@500&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-on-surface": "#313030",
+            "surface-container-lowest": "#0e0e0e",
+            "surface-container-low": "#1c1b1b",
+            "tertiary-fixed-dim": "#ffb4aa",
+            "on-tertiary-fixed-variant": "#930007",
+            "secondary-fixed-dim": "#47e266",
+            "on-secondary-container": "#004615",
+            "surface-bright": "#393939",
+            "tertiary-fixed": "#ffdad5",
+            "on-background": "#e5e2e1",
+            "on-primary": "#003064",
+            "surface-container-high": "#2a2a2a",
+            "on-tertiary": "#690004",
+            "on-secondary": "#003910",
+            "on-tertiary-fixed": "#410001",
+            "primary-fixed-dim": "#aac7ff",
+            "on-surface": "#e5e2e1",
+            "tertiary": "#ffb4aa",
+            "inverse-primary": "#005db8",
+            "on-surface-variant": "#c0c6d6",
+            "outline-variant": "#414754",
+            "primary-container": "#3e90ff",
+            "error": "#ffb4ab",
+            "secondary-container": "#09bf49",
+            "on-primary-fixed-variant": "#00468d",
+            "surface": "#131313",
+            "on-tertiary-container": "#5c0003",
+            "secondary": "#47e266",
+            "primary-fixed": "#d6e3ff",
+            "on-secondary-fixed": "#002106",
+            "secondary-fixed": "#6cff82",
+            "background": "#131313",
+            "error-container": "#93000a",
+            "on-secondary-fixed-variant": "#00531a",
+            "on-error-container": "#ffdad6",
+            "on-primary-fixed": "#001b3e",
+            "surface-container-highest": "#353534",
+            "inverse-surface": "#e5e2e1",
+            "surface-dim": "#131313",
+            "on-primary-container": "#002957",
+            "surface-variant": "#353534",
+            "surface-container": "#201f1f",
+            "surface-tint": "#aac7ff",
+            "on-error": "#690005",
+            "primary": "#aac7ff",
+            "tertiary-container": "#ff5447",
+            "outline": "#8b91a0"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "fontFamily": {
+            "headline": ["Inter"],
+            "body": ["Inter"],
+            "label": ["Space Grotesk"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .technical-data { font-family: 'JetBrains Mono', monospace; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .glass-sidebar { background: rgba(28, 27, 27, 0.8); backdrop-filter: blur(30px) saturate(180%); }
+    .glass-toolbar { background: rgba(19, 19, 19, 0.8); backdrop-filter: blur(30px) saturate(180%); }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden h-screen flex">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-full w-64 glass-sidebar py-8 px-4 border-r border-outline-variant/15">
+<div class="mb-8 px-2">
+<h1 class="text-xl font-black text-[#E5E2E1] font-headline">Port Killer</h1>
+<span class="text-[0.65rem] font-label tracking-[0.1em] text-on-surface-variant opacity-60">v2.4.0</span>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#AAC7FF]/10 text-[#AAC7FF] border-l-4 border-[#AAC7FF] transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="lan">lan</span>
+<span class="text-sm font-medium">Active Ports</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#E5E2E1]/70 hover:bg-[#393939] transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="star">star</span>
+<span class="text-sm font-medium">Favorites</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#E5E2E1]/70 hover:bg-[#393939] transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="schedule">schedule</span>
+<span class="text-sm font-medium">History</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#E5E2E1]/70 hover:bg-[#393939] transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="workspace_premium">workspace_premium</span>
+<span class="text-sm font-medium">Pro Features</span>
+</a>
+</nav>
+<div class="mt-auto px-2">
+<button class="w-full py-2.5 px-4 bg-primary-container text-on-primary-container rounded-lg text-sm font-bold transition-all hover:brightness-110 active:scale-95">
+        Upgrade to Pro
+      </button>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 flex flex-col min-w-0 bg-surface relative">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-6 h-14 glass-toolbar z-10">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">search</span>
+<input class="w-full bg-surface-container-lowest rounded-xl py-1.5 pl-10 pr-4 text-sm font-technical focus:outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-on-surface-variant/40 border-none" placeholder="Search ports, PIDs or processes..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low text-on-surface-variant text-xs font-label">
+<span>AUTO-REFRESH</span>
+<div class="w-8 h-4 bg-secondary/30 rounded-full relative cursor-pointer">
+<div class="absolute right-0.5 top-0.5 w-3 h-3 bg-secondary rounded-full"></div>
+</div>
+</div>
+<button class="p-2 rounded-lg hover:bg-[#393939]/50 text-[#AAC7FF] transition-all" title="Filter">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+<button class="p-2 rounded-lg hover:bg-[#393939]/50 text-[#AAC7FF] transition-all" title="Refresh">
+<span class="material-symbols-outlined" data-icon="refresh">refresh</span>
+</button>
+<button class="p-2 rounded-lg hover:bg-[#393939]/50 text-[#AAC7FF] transition-all" title="History">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+</button>
+</div>
+</header>
+<!-- Content Area -->
+<div class="flex-1 overflow-y-auto p-6 no-scrollbar">
+<!-- Stats Summary / Heatmap Area -->
+<div class="grid grid-cols-4 gap-4 mb-8">
+<div class="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
+<span class="text-[0.65rem] font-label text-on-surface-variant/60 tracking-wider">TOTAL LISTENING</span>
+<span class="text-2xl font-black text-primary">14</span>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
+<span class="text-[0.65rem] font-label text-on-surface-variant/60 tracking-wider">MEMORY USAGE</span>
+<span class="text-2xl font-black text-secondary">1.2 GB</span>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
+<span class="text-[0.65rem] font-label text-on-surface-variant/60 tracking-wider">ACTIVE CONNS</span>
+<span class="text-2xl font-black text-tertiary-fixed-dim">342</span>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl flex flex-col gap-1">
+<span class="text-[0.65rem] font-label text-on-surface-variant/60 tracking-wider">SYSTEM LOAD</span>
+<span class="text-2xl font-black text-on-surface">4.2%</span>
+</div>
+</div>
+<!-- Data Table -->
+<div class="w-full bg-surface-container-low/50 rounded-xl overflow-hidden">
+<div class="grid grid-cols-12 gap-4 px-6 py-3 bg-surface-container-high/50 text-[0.65rem] font-label text-on-surface-variant tracking-[0.1em]">
+<div class="col-span-1">PORT</div>
+<div class="col-span-3">PROCESS</div>
+<div class="col-span-1">PID</div>
+<div class="col-span-2">USER</div>
+<div class="col-span-2">STATUS</div>
+<div class="col-span-2">COMMAND</div>
+<div class="col-span-1 text-right">ACTION</div>
+</div>
+<div class="divide-y divide-outline-variant/10">
+<!-- Row 1: Node.js -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 items-center group hover:bg-[#393939]/30 transition-colors relative">
+<div class="absolute left-0 top-4 bottom-4 w-1 bg-secondary rounded-r-full"></div>
+<div class="col-span-1 font-technical text-primary font-bold">3000</div>
+<div class="col-span-3 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-sm text-secondary">javascript</span>
+</div>
+<span class="font-medium text-sm">Node.js</span>
+</div>
+<div class="col-span-1 font-technical text-on-surface-variant text-sm">451</div>
+<div class="col-span-2 text-sm text-on-surface-variant/80">admin</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-xs font-label">LISTENING</span>
+</div>
+<div class="col-span-2 text-xs font-technical text-on-surface-variant/60 truncate">/usr/local/bin/node index.js</div>
+<div class="col-span-1 text-right">
+<button class="bg-error-container/20 hover:bg-error-container text-error px-3 py-1 rounded-lg text-[0.65rem] font-bold transition-all">KILL</button>
+</div>
+</div>
+<!-- Row 2: PostgreSQL -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 items-center group hover:bg-[#393939]/30 transition-colors relative">
+<div class="absolute left-0 top-4 bottom-4 w-1 bg-secondary rounded-r-full"></div>
+<div class="col-span-1 font-technical text-primary font-bold">5432</div>
+<div class="col-span-3 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-sm text-primary">database</span>
+</div>
+<span class="font-medium text-sm">PostgreSQL</span>
+</div>
+<div class="col-span-1 font-technical text-on-surface-variant text-sm">120</div>
+<div class="col-span-2 text-sm text-on-surface-variant/80">postgres</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-xs font-label">LISTENING</span>
+</div>
+<div class="col-span-2 text-xs font-technical text-on-surface-variant/60 truncate">/Library/PostgreSQL/14/bin/postgres</div>
+<div class="col-span-1 text-right">
+<button class="bg-error-container/20 hover:bg-error-container text-error px-3 py-1 rounded-lg text-[0.65rem] font-bold transition-all">KILL</button>
+</div>
+</div>
+<!-- Row 3: Python -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 items-center group hover:bg-[#393939]/30 transition-colors relative">
+<div class="absolute left-0 top-4 bottom-4 w-1 bg-secondary rounded-r-full"></div>
+<div class="col-span-1 font-technical text-primary font-bold">8000</div>
+<div class="col-span-3 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-sm text-[#47E266]">code</span>
+</div>
+<span class="font-medium text-sm">Python</span>
+</div>
+<div class="col-span-1 font-technical text-on-surface-variant text-sm">98</div>
+<div class="col-span-2 text-sm text-on-surface-variant/80">developer</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-xs font-label">LISTENING</span>
+</div>
+<div class="col-span-2 text-xs font-technical text-on-surface-variant/60 truncate">python3 -m http.server 8000</div>
+<div class="col-span-1 text-right">
+<button class="bg-error-container/20 hover:bg-error-container text-error px-3 py-1 rounded-lg text-[0.65rem] font-bold transition-all">KILL</button>
+</div>
+</div>
+<!-- Row 4: MongoDB -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 items-center group hover:bg-[#393939]/30 transition-colors relative">
+<div class="absolute left-0 top-4 bottom-4 w-1 bg-secondary rounded-r-full"></div>
+<div class="col-span-1 font-technical text-primary font-bold">27017</div>
+<div class="col-span-3 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-sm text-[#47E266]">storage</span>
+</div>
+<span class="font-medium text-sm">MongoDB</span>
+</div>
+<div class="col-span-1 font-technical text-on-surface-variant text-sm">22</div>
+<div class="col-span-2 text-sm text-on-surface-variant/80">mongod</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-xs font-label">LISTENING</span>
+</div>
+<div class="col-span-2 text-xs font-technical text-on-surface-variant/60 truncate">mongod --config /usr/local/etc/mongod.conf</div>
+<div class="col-span-1 text-right">
+<button class="bg-error-container/20 hover:bg-error-container text-error px-3 py-1 rounded-lg text-[0.65rem] font-bold transition-all">KILL</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Custom Visualizer: Port Heatmap -->
+<div class="mt-8">
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-sm font-label tracking-widest text-on-surface-variant">PORT ACTIVITY MAP</h2>
+<span class="text-[0.65rem] text-on-surface-variant/40">REAL-TIME TELEMETRY</span>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl">
+<div class="grid grid-cols-24 gap-1.5 overflow-hidden">
+<!-- Simulated grid of squares -->
+<div class="w-full aspect-square rounded-[2px] bg-secondary/80"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/60"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-tertiary-container/40"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/20"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-tertiary-container/80"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/40"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/20"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/60"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+<div class="w-full aspect-square rounded-[2px] bg-secondary/10"></div>
+</div>
+<div class="mt-4 flex gap-6 text-[0.6rem] font-label text-on-surface-variant/60">
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-[1px] bg-secondary/10"></div> IDLE
+            </div>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-[1px] bg-secondary/60"></div> ACTIVE
+            </div>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-[1px] bg-tertiary-container/80"></div> HIGH TRAFFIC
+            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden flex justify-around items-center w-full h-16 bg-[#131313]/80 backdrop-blur-3xl border-t border-outline-variant/10 px-4">
+<a class="flex flex-col items-center gap-1 text-[#AAC7FF]" href="#">
+<span class="material-symbols-outlined" data-icon="lan">lan</span>
+<span class="text-[0.65rem] font-label">PORTS</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[#E5E2E1]/60" href="#">
+<span class="material-symbols-outlined" data-icon="star">star</span>
+<span class="text-[0.65rem] font-label">FAVES</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[#E5E2E1]/60" href="#">
+<span class="material-symbols-outlined" data-icon="schedule">schedule</span>
+<span class="text-[0.65rem] font-label">HISTORY</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[#E5E2E1]/60" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="text-[0.65rem] font-label">PRO</span>
+</a>
+</nav>
+</main>
+<!-- Decorative Window Controls (macOS Vibe) -->
+<div class="fixed top-4 left-4 z-50 flex gap-2 md:hidden">
+<div class="w-3 h-3 rounded-full bg-[#FF5F56]"></div>
+<div class="w-3 h-3 rounded-full bg-[#FFBD2E]"></div>
+<div class="w-3 h-3 rounded-full bg-[#27C93F]"></div>
+</div>
+</body></html>

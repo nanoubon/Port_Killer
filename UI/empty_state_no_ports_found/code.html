@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Port Killer | All Ports Clear</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&amp;family=Space+Grotesk:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "inverse-on-surface": "#313030",
+                    "surface-container-lowest": "#0e0e0e",
+                    "surface-container-low": "#1c1b1b",
+                    "tertiary-fixed-dim": "#ffb4aa",
+                    "on-tertiary-fixed-variant": "#930007",
+                    "secondary-fixed-dim": "#47e266",
+                    "on-secondary-container": "#004615",
+                    "surface-bright": "#393939",
+                    "tertiary-fixed": "#ffdad5",
+                    "on-background": "#e5e2e1",
+                    "on-primary": "#003064",
+                    "surface-container-high": "#2a2a2a",
+                    "on-tertiary": "#690004",
+                    "on-secondary": "#003910",
+                    "on-tertiary-fixed": "#410001",
+                    "primary-fixed-dim": "#aac7ff",
+                    "on-surface": "#e5e2e1",
+                    "tertiary": "#ffb4aa",
+                    "inverse-primary": "#005db8",
+                    "on-surface-variant": "#c0c6d6",
+                    "outline-variant": "#414754",
+                    "primary-container": "#3e90ff",
+                    "error": "#ffb4ab",
+                    "secondary-container": "#09bf49",
+                    "on-primary-fixed-variant": "#00468d",
+                    "surface": "#131313",
+                    "on-tertiary-container": "#5c0003",
+                    "secondary": "#47e266",
+                    "primary-fixed": "#d6e3ff",
+                    "on-secondary-fixed": "#002106",
+                    "secondary-fixed": "#6cff82",
+                    "background": "#131313",
+                    "error-container": "#93000a",
+                    "on-secondary-fixed-variant": "#00531a",
+                    "on-error-container": "#ffdad6",
+                    "on-primary-fixed": "#001b3e",
+                    "surface-container-highest": "#353534",
+                    "inverse-surface": "#e5e2e1",
+                    "surface-dim": "#131313",
+                    "on-primary-container": "#002957",
+                    "surface-variant": "#353534",
+                    "surface-container": "#201f1f",
+                    "surface-tint": "#aac7ff",
+                    "on-error": "#690005",
+                    "primary": "#aac7ff",
+                    "tertiary-container": "#ff5447",
+                    "outline": "#8b91a0"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Inter"],
+                    "body": ["Inter"],
+                    "label": ["Space Grotesk"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .technical-grid {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(65, 71, 84, 0.1) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(65, 71, 84, 0.1) 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary/30 selection:text-primary overflow-hidden">
+<!-- TopNavBar -->
+<header class="fixed top-0 z-50 flex justify-between items-center w-full px-6 h-12 bg-[#131313]/80 backdrop-blur-3xl">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold tracking-tight text-[#E5E2E1] font-headline">Port Killer</span>
+<div class="hidden md:flex gap-6 ml-8">
+<span class="text-[#E5E2E1]/60 text-[0.75rem] font-label tracking-[0.05em] uppercase cursor-pointer hover:bg-[#393939]/50 transition-all duration-200 px-2 py-1 rounded">Active Ports</span>
+<span class="text-[#E5E2E1]/60 text-[0.75rem] font-label tracking-[0.05em] uppercase cursor-pointer hover:bg-[#393939]/50 transition-all duration-200 px-2 py-1 rounded">Favorites</span>
+<span class="text-[#E5E2E1]/60 text-[0.75rem] font-label tracking-[0.05em] uppercase cursor-pointer hover:bg-[#393939]/50 transition-all duration-200 px-2 py-1 rounded">History</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-[#E5E2E1]/60 hover:bg-[#393939]/50 transition-all duration-200 rounded active:scale-95">
+<span class="material-symbols-outlined text-[20px]" data-icon="refresh">refresh</span>
+</button>
+<button class="p-2 text-[#E5E2E1]/60 hover:bg-[#393939]/50 transition-all duration-200 rounded active:scale-95">
+<span class="material-symbols-outlined text-[20px]" data-icon="filter_list">filter_list</span>
+</button>
+<button class="p-2 text-[#E5E2E1]/60 hover:bg-[#393939]/50 transition-all duration-200 rounded active:scale-95">
+<span class="material-symbols-outlined text-[20px]" data-icon="history">history</span>
+</button>
+</div>
+</header>
+<div class="flex h-screen pt-12">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-full py-8 px-4 w-64 bg-[#1C1B1B]/80 backdrop-blur-3xl">
+<div class="mb-8 px-2">
+<h2 class="text-xl font-black text-[#E5E2E1] font-headline">Port Killer</h2>
+<p class="text-[0.75rem] font-label tracking-[0.05em] text-[#E5E2E1]/40 uppercase mt-1">v2.4.0</p>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="flex items-center gap-3 px-3 py-2 text-[#E5E2E1]/70 font-label tracking-[0.05em] text-[0.75rem] hover:bg-[#393939] transition-colors rounded-lg cursor-pointer">
+<span class="material-symbols-outlined text-[18px]" data-icon="lan">lan</span>
+<span>Active Ports</span>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-[#E5E2E1]/70 font-label tracking-[0.05em] text-[0.75rem] hover:bg-[#393939] transition-colors rounded-lg cursor-pointer">
+<span class="material-symbols-outlined text-[18px]" data-icon="star">star</span>
+<span>Favorites</span>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-[#E5E2E1]/70 font-label tracking-[0.05em] text-[0.75rem] hover:bg-[#393939] transition-colors rounded-lg cursor-pointer">
+<span class="material-symbols-outlined text-[18px]" data-icon="schedule">schedule</span>
+<span>History</span>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-[#E5E2E1]/70 font-label tracking-[0.05em] text-[0.75rem] hover:bg-[#393939] transition-colors rounded-lg cursor-pointer">
+<span class="material-symbols-outlined text-[18px]" data-icon="workspace_premium">workspace_premium</span>
+<span>Pro Features</span>
+</div>
+</nav>
+<div class="mt-auto px-2">
+<button class="w-full py-3 bg-[#AAC7FF]/10 text-[#AAC7FF] font-bold rounded-xl text-[0.875rem] hover:bg-[#AAC7FF]/20 transition-all active:scale-[0.98]">
+                    Upgrade to Pro
+                </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 relative overflow-hidden technical-grid flex items-center justify-center">
+<!-- Radial Gradient for Ambient Depth -->
+<div class="absolute inset-0 bg-radial-at-c from-[#1C1B1B] via-transparent to-transparent opacity-50 pointer-events-none"></div>
+<section class="relative z-10 max-w-2xl w-full px-6 flex flex-col items-center text-center">
+<!-- Technical Empty State Illustration -->
+<div class="relative w-64 h-64 mb-12 flex items-center justify-center">
+<!-- Subtle Hollow Circles -->
+<div class="absolute w-48 h-48 border border-outline-variant/20 rounded-full"></div>
+<div class="absolute w-32 h-32 border border-outline-variant/30 rounded-full"></div>
+<div class="absolute w-16 h-16 border border-outline-variant/40 rounded-full"></div>
+<!-- Pulsing Central Core -->
+<div class="w-2 h-2 bg-secondary rounded-full shadow-[0_0_15px_rgba(71,226,102,0.5)]"></div>
+<!-- Decorative Radial Lines -->
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-full h-px bg-gradient-to-r from-transparent via-outline-variant/20 to-transparent rotate-45"></div>
+<div class="w-full h-px bg-gradient-to-r from-transparent via-outline-variant/20 to-transparent -rotate-45"></div>
+</div>
+<!-- Monospace Data Decoration -->
+<div class="absolute top-0 right-0 font-label text-[0.625rem] text-secondary/40 tracking-widest uppercase">system_idle</div>
+<div class="absolute bottom-4 left-0 font-label text-[0.625rem] text-outline/40 tracking-widest uppercase">listening: null</div>
+</div>
+<!-- Messaging -->
+<div class="space-y-4 mb-12">
+<h1 class="text-[2.75rem] font-bold tracking-tight text-on-surface font-headline leading-tight">All Ports Clear</h1>
+<p class="text-[0.875rem] text-on-surface-variant max-w-md mx-auto leading-relaxed">
+                        No active listening ports were found on your system. <br/>Port Killer is standing by.
+                    </p>
+</div>
+<!-- CTA Matrix (Editorial Bento-ish Layout) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg">
+<!-- Primary CTA -->
+<button class="flex items-center justify-between p-5 bg-surface-container-high hover:bg-surface-bright transition-all duration-200 rounded-xl group border border-outline-variant/10 text-left">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-bold text-primary">Start a Local Server</span>
+<span class="text-[0.75rem] text-on-surface-variant/60 font-label mt-1">Spin up dev environment</span>
+</div>
+<span class="material-symbols-outlined text-primary group-hover:translate-x-1 transition-transform" data-icon="add_circle">add_circle</span>
+</button>
+<!-- Secondary CTA -->
+<button class="flex items-center justify-between p-5 bg-surface-container-high hover:bg-surface-bright transition-all duration-200 rounded-xl group border border-outline-variant/10 text-left">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-bold text-on-surface">Refresh Scan</span>
+<span class="text-[0.75rem] text-on-surface-variant/60 font-label mt-1">Re-evaluate system state</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:rotate-180 transition-transform duration-500" data-icon="sync">sync</span>
+</button>
+<!-- Tertiary CTA -->
+<button class="flex items-center justify-between p-5 bg-surface-container-high hover:bg-surface-bright transition-all duration-200 rounded-xl group border border-outline-variant/10 text-left">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-bold text-on-surface">Explore Favorites</span>
+<span class="text-[0.75rem] text-on-surface-variant/60 font-label mt-1">Quick-access known ports</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="star">star</span>
+</button>
+<!-- Pro CTA -->
+<button class="flex items-center justify-between p-5 bg-primary-container/20 hover:bg-primary-container/30 transition-all duration-200 rounded-xl group border border-primary/20 text-left">
+<div class="flex flex-col">
+<span class="text-[0.875rem] font-bold text-primary">Enable Pro Monitoring</span>
+<span class="text-[0.75rem] text-primary/60 font-label mt-1">Real-time daemon alerts</span>
+</div>
+<span class="material-symbols-outlined text-primary" data-icon="bolt">bolt</span>
+</button>
+</div>
+<!-- Bottom Decorative Bar -->
+<div class="mt-16 flex items-center gap-6">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="text-[0.625rem] font-label text-on-surface-variant/40 tracking-widest uppercase">System Secure</span>
+</div>
+<div class="w-px h-4 bg-outline-variant/30"></div>
+<div class="flex items-center gap-2">
+<span class="text-[0.625rem] font-label text-on-surface-variant/40 tracking-widest uppercase">Uptime: 04:12:09</span>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Mobile Bottom Navigation -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#131313]/90 backdrop-blur-3xl flex items-center justify-around px-6 z-50">
+<button class="flex flex-col items-center gap-1 text-[#E5E2E1]/60">
+<span class="material-symbols-outlined" data-icon="lan">lan</span>
+<span class="text-[10px] font-label uppercase">Ports</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#E5E2E1]/60">
+<span class="material-symbols-outlined" data-icon="star">star</span>
+<span class="text-[10px] font-label uppercase">Saved</span>
+</button>
+<div class="relative -top-6">
+<button class="w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="refresh">refresh</span>
+</button>
+</div>
+<button class="flex flex-col items-center gap-1 text-[#E5E2E1]/60">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="text-[10px] font-label uppercase">Logs</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#E5E2E1]/60">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="text-[10px] font-label uppercase">Setup</span>
+</button>
+</nav>
+</body></html>
