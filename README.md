@@ -1,6 +1,8 @@
 # Port Killer
 ## A tool for anyone who wants to manage macOS ports in one place
 
+![Main screen](https://github.com/nanoubon/Port_Killer/blob/main/UI/app_store_preview_screen/screen.png)
+
 I’m currently working on **Port Killer**, a macOS app designed to make it easier to see which ports are open on your machine. If you need to deal with a process occupying a port, you can handle it from one place without jumping between a bunch of terminal commands.
 
 If you work in development on macOS, this problem probably feels familiar: your project won’t run because a port is already in use, you open Terminal to check which process is listening, and then you kill it step by step. Port Killer is being built to make that whole flow faster and easier to understand.
