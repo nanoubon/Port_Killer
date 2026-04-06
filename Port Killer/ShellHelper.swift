@@ -1,5 +1,15 @@
 import Foundation
 
+struct ShellCommandResult: Sendable {
+    let standardOutput: String
+    let standardError: String
+    let exitStatus: Int32
+
+    nonisolated var succeeded: Bool {
+        exitStatus == 0
+    }
+}
+
 /// A helper struct to safely execute shell commands.
 ///
 /// **How to use:**
@@ -19,26 +29,31 @@ import Foundation
 /// let _ = ShellHelper.executeCommand(command: "/bin/kill", arguments: ["-9", "1234"])
 /// ```
 struct ShellHelper {
-    
+
     /// Executes a shell command and returns the standard output.
     /// It runs locally without needing a full bash profile.
-    static func executeCommand(command: String, arguments: [String]) -> String? {
+    nonisolated static func executeCommand(command: String, arguments: [String]) -> ShellCommandResult? {
         let process = Process()
-        let pipe = Pipe()
-        
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = arguments
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice // Ignore stderr to avoid polluting stdout parsing
-        
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
         do {
             try process.run()
             process.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)
-            return output
-            
+
+            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+
+            return ShellCommandResult(
+                standardOutput: String(data: stdoutData, encoding: .utf8) ?? "",
+                standardError: String(data: stderrData, encoding: .utf8) ?? "",
+                exitStatus: process.terminationStatus
+            )
         } catch {
             print("Error executing shell command \(command): \(error)")
             return nil

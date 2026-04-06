@@ -12,18 +12,22 @@ import SwiftUI
 struct Port_KillerApp: App {
     @StateObject private var viewModel = PortViewModel()
     @StateObject private var proStore = ProPurchaseManager()
+    @StateObject private var appRouter = AppRouter()
 
     var body: some Scene {
-        WindowGroup(id: "main") {
+        Window("Port Killer", id: "main") {
             ContentView()
                 .environmentObject(viewModel)
                 .environmentObject(proStore)
+                .environmentObject(appRouter)
         }
+        .defaultSize(width: 980, height: 740)
 
         MenuBarExtra {
             MenuBarPopoverView()
                 .environmentObject(viewModel)
                 .environmentObject(proStore)
+                .environmentObject(appRouter)
         } label: {
             Image("MenuBarIcon")
                 .renderingMode(.original)

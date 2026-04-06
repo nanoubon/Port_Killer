@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import UniformTypeIdentifiers
 import SwiftUI
 
 @MainActor
@@ -14,48 +13,51 @@ final class PortViewModel: ObservableObject {
     @Published var pinnedBookmarks: [PortBookmark] = []
     @Published var killHistory: [KillHistoryEntry] = []
     @Published var autoKillRules: [AutoKillRule] = []
-    @Published var hasCompletedOnboarding: Bool = false
-    @Published var isProUnlocked: Bool = false
+    @Published var hasCompletedOnboarding: Bool = true
     @Published var isAutoRefreshEnabled: Bool = true
     @Published var refreshIntervalSeconds: Double = 8
-    @Published var showAppStorePreview: Bool = false
+    @Published var isLaunchAtLoginEnabled: Bool = false
     @Published var debugMessage: String = "Initializing..."
     @Published var lastRefreshAt: Date?
     @Published var hasLoadedLivePorts: Bool = false
 
+    private let portScanService = PortScanService()
+    private let processKillerService = ProcessKillerService()
+    private let launchAtLoginService = LaunchAtLoginService()
+
     private var autoRefreshCancellable: AnyCancellable?
+    private var activeRefreshTask: Task<Void, Never>?
+    private var refreshGeneration = 0
+    private var killInFlightPIDs = Set<String>()
 
     private enum StorageKey {
         static let pinnedBookmarks = "PortKiller.pinnedBookmarks"
         static let killHistory = "PortKiller.killHistory"
         static let autoKillRules = "PortKiller.autoKillRules"
         static let hasCompletedOnboarding = "PortKiller.hasCompletedOnboarding"
-        static let isProUnlocked = "PortKiller.isProUnlocked"
         static let isAutoRefreshEnabled = "PortKiller.isAutoRefreshEnabled"
         static let refreshIntervalSeconds = "PortKiller.refreshIntervalSeconds"
+        static let isLaunchAtLoginEnabled = "PortKiller.isLaunchAtLoginEnabled"
     }
 
     init() {
         loadPersistedState()
-        fetchActivePorts()
+        refreshLaunchAtLoginStatus()
+        requestPortRefresh()
         configureAutoRefresh()
     }
 
+    deinit {
+        activeRefreshTask?.cancel()
+        autoRefreshCancellable?.cancel()
+    }
+
     var filteredPorts: [PortItem] {
-        guard !searchText.isEmpty else { return ports }
-        return ports.filter {
-            $0.processName.localizedCaseInsensitiveContains(searchText) ||
-            $0.port.localizedCaseInsensitiveContains(searchText) ||
-            $0.pid.localizedCaseInsensitiveContains(searchText) ||
-            ($0.user?.localizedCaseInsensitiveContains(searchText) ?? false)
-        }
+        ports(matching: searchText)
     }
 
     var visiblePorts: [PortItem] {
-        if searchText.isEmpty {
-            return hasLoadedLivePorts ? ports : demoPorts
-        }
-        return filteredPorts
+        ports(matching: searchText)
     }
 
     var selectedPort: PortItem? {
@@ -70,13 +72,12 @@ final class PortViewModel: ObservableObject {
     }
 
     var pinnedPortItems: [PortItem] {
-        let source = ports.isEmpty ? demoPorts : ports
-        let matches = pinnedBookmarks.compactMap { bookmark in
+        let source = (hasLoadedLivePorts && !ports.isEmpty) ? ports : demoPorts
+        return pinnedBookmarks.compactMap { bookmark in
             source.first { item in
                 item.port == bookmark.port && item.processName.localizedCaseInsensitiveContains(bookmark.processName)
             } ?? source.first { $0.port == bookmark.port }
         }
-        return matches
     }
 
     var dashboardMetrics: [DashboardMetric] {
@@ -151,7 +152,7 @@ final class PortViewModel: ObservableObject {
                 title: "REFRESH INTERVAL",
                 value: "\(Int(refreshIntervalSeconds))s",
                 tint: .primary,
-                detail: "Pro-only live monitoring cadence"
+                detail: "Live monitoring cadence"
             ),
             DashboardMetric(
                 title: "PROFILE SYNC",
@@ -195,13 +196,20 @@ final class PortViewModel: ObservableObject {
         return "\(ports.count) active"
     }
 
-    func openAppStorePreview() {
-        showAppStorePreview = true
-    }
+    func ports(matching query: String) -> [PortItem] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = hasLoadedLivePorts ? ports : demoPorts
 
-    func setProUnlocked(_ unlocked: Bool) {
-        isProUnlocked = unlocked
-        persistBool(unlocked, forKey: StorageKey.isProUnlocked)
+        guard !trimmedQuery.isEmpty else {
+            return source
+        }
+
+        return source.filter { port in
+            port.processName.localizedCaseInsensitiveContains(trimmedQuery) ||
+            port.port.localizedCaseInsensitiveContains(trimmedQuery) ||
+            port.pid.localizedCaseInsensitiveContains(trimmedQuery) ||
+            (port.user?.localizedCaseInsensitiveContains(trimmedQuery) ?? false)
+        }
     }
 
     func completeOnboarding() {
@@ -230,6 +238,10 @@ final class PortViewModel: ObservableObject {
         selectedPortID = port.id
     }
 
+    func selectPort(withID id: String?) {
+        selectedPortID = id
+    }
+
     func isPinned(_ port: PortItem) -> Bool {
         pinnedBookmarks.contains { bookmark in
             bookmark.port == port.port && bookmark.processName.localizedCaseInsensitiveContains(port.processName)
@@ -252,38 +264,62 @@ final class PortViewModel: ObservableObject {
 
     func killProcess(pid: String, port: PortItem? = nil) {
         let snapshot = port ?? ports.first { $0.pid == pid }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = ShellHelper.executeCommand(command: "/bin/kill", arguments: ["-9", pid])
-            DispatchQueue.main.async {
-                if let snapshot {
-                    self.killHistory.insert(
-                        KillHistoryEntry(
-                            port: snapshot.port,
-                            processName: snapshot.processName,
-                            pid: snapshot.pid,
-                            outcome: result == nil ? "Kill command failed" : "Process terminated"
-                        ),
-                        at: 0
-                    )
-                    self.persistKillHistory()
-                }
-                self.selectedPortIDs.remove(snapshot?.id ?? "")
-                self.fetchActivePorts()
-            }
+        guard let snapshot else {
+            debugMessage = "Could not find the selected process."
+            return
+        }
+
+        Task { [weak self] in
+            await self?.killPorts([snapshot], refreshAfterCompletion: true)
         }
     }
 
     func killSelectedPorts() {
         let items = selectedPorts
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            debugMessage = "Select at least one process to terminate."
+            return
+        }
+
         clearSelection()
-        for item in items {
-            killProcess(pid: item.pid, port: item)
+
+        Task { [weak self] in
+            await self?.killPorts(items, refreshAfterCompletion: true)
+        }
+    }
+
+    func killBusyPorts(matching query: String = "") {
+        guard hasLoadedLivePorts else {
+            debugMessage = "No live ports are loaded yet."
+            return
+        }
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let items = ports.filter { port in
+            guard port.state == .busy else { return false }
+            guard !trimmedQuery.isEmpty else { return true }
+            return port.processName.localizedCaseInsensitiveContains(trimmedQuery) ||
+                port.port.localizedCaseInsensitiveContains(trimmedQuery) ||
+                port.pid.localizedCaseInsensitiveContains(trimmedQuery) ||
+                (port.user?.localizedCaseInsensitiveContains(trimmedQuery) ?? false)
+        }
+
+        guard !items.isEmpty else {
+            debugMessage = "No high-usage processes matched the current filter."
+            return
+        }
+
+        Task { [weak self] in
+            await self?.killPorts(items, refreshAfterCompletion: true)
         }
     }
 
     func refresh() {
-        fetchActivePorts()
+        requestPortRefresh()
+    }
+
+    func fetchActivePorts() {
+        requestPortRefresh()
     }
 
     func toggleAutoRefresh() {
@@ -333,147 +369,69 @@ final class PortViewModel: ObservableObject {
         persistAutoKillRules()
     }
 
-    func exportProProfile() {
-        let profile = ProProfile(
+    func currentProProfile() -> ProProfile {
+        ProProfile(
             pinnedBookmarks: pinnedBookmarks,
             killHistory: killHistory,
             autoKillRules: autoKillRules,
             refreshIntervalSeconds: refreshIntervalSeconds,
             isAutoRefreshEnabled: isAutoRefreshEnabled
         )
+    }
 
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "PortKiller-ProProfile.json"
-        panel.canCreateDirectories = true
-
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                let data = try JSONEncoder.portKillerProfile.encode(profile)
-                try data.write(to: url, options: .atomic)
-                debugMessage = "Exported Pro profile."
-            } catch {
-                debugMessage = "Failed to export Pro profile."
-            }
+    func noteProfileExportCompletion(_ result: Result<URL, Error>) {
+        switch result {
+        case .success:
+            debugMessage = "Exported Pro profile."
+        case .failure(let error):
+            debugMessage = "Failed to export Pro profile: \(error.localizedDescription)"
         }
     }
 
-    func importProProfile() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+    func importProProfile(from result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else {
+                debugMessage = "No profile file was selected."
+                return
+            }
 
-        if panel.runModal() == .OK, let url = panel.url {
             do {
                 let data = try Data(contentsOf: url)
                 let profile = try JSONDecoder.portKillerProfile.decode(ProProfile.self, from: data)
-                pinnedBookmarks = profile.pinnedBookmarks
-                killHistory = profile.killHistory
-                autoKillRules = profile.autoKillRules
-                isAutoRefreshEnabled = profile.isAutoRefreshEnabled
-                refreshIntervalSeconds = max(3, min(profile.refreshIntervalSeconds, 60))
-                persistPinnedBookmarks()
-                persistKillHistory()
-                persistAutoKillRules()
-                persistBool(isAutoRefreshEnabled, forKey: StorageKey.isAutoRefreshEnabled)
-                persistDouble(refreshIntervalSeconds, forKey: StorageKey.refreshIntervalSeconds)
-                configureAutoRefresh()
+                applyImportedProfile(profile)
                 debugMessage = "Imported Pro profile."
             } catch {
-                debugMessage = "Failed to import Pro profile."
+                debugMessage = "Failed to import Pro profile: \(error.localizedDescription)"
+            }
+        case .failure(let error):
+            debugMessage = "Failed to import Pro profile: \(error.localizedDescription)"
+        }
+    }
+
+    func refreshLaunchAtLoginStatus() {
+        let isEnabled = launchAtLoginService.currentStatus()
+        updateLaunchAtLoginState(isEnabled)
+    }
+
+    func toggleLaunchAtLogin() {
+        let targetState = !isLaunchAtLoginEnabled
+        isLaunchAtLoginEnabled = targetState
+        persistBool(targetState, forKey: StorageKey.isLaunchAtLoginEnabled)
+
+        Task {
+            do {
+                let actualState = try launchAtLoginService.setEnabled(targetState)
+                updateLaunchAtLoginState(actualState)
+            } catch {
+                // Service unavailable (e.g., missing entitlements), keep UI state
+                debugMessage = "Start at login toggled (note: LoginItemService not available in this build)"
             }
         }
     }
 
-    func fetchActivePorts() {
-        debugMessage = "Fetching ports..."
-        lastRefreshAt = Date()
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let output = ShellHelper.executeCommand(command: "/usr/sbin/lsof", arguments: ["-iTCP", "-sTCP:LISTEN", "-P", "-n"]) else {
-                DispatchQueue.main.async {
-                    self.debugMessage = "Failed to execute lsof command."
-                    self.hasLoadedLivePorts = true
-                }
-                return
-            }
-
-            if output.isEmpty {
-                DispatchQueue.main.async {
-                    self.debugMessage = "Executed lsof, but output was empty."
-                    self.ports = []
-                    self.hasLoadedLivePorts = true
-                }
-                return
-            }
-
-            struct ParsedPort {
-                let processName: String
-                let pid: String
-                let user: String
-                let port: String
-            }
-
-            var parsed: [ParsedPort] = []
-            let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
-
-            guard lines.count > 1 else {
-                DispatchQueue.main.async {
-                    self.debugMessage = "Output has only \(lines.count) lines."
-                    self.ports = []
-                    self.hasLoadedLivePorts = true
-                }
-                return
-            }
-
-            for line in lines.dropFirst() {
-                let columns = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                guard columns.count >= 9 else { continue }
-
-                let processName = columns[0]
-                let pid = columns[1]
-                let user = columns[2]
-                let nameColumn = columns[8]
-
-                if let portRange = nameColumn.range(of: ":\\d+", options: .regularExpression) {
-                    let portString = String(nameColumn[portRange].dropFirst())
-                    let entry = ParsedPort(processName: processName, pid: pid, user: user, port: portString)
-                    if !parsed.contains(where: { $0.port == entry.port && $0.processName == entry.processName }) {
-                        parsed.append(entry)
-                    }
-                }
-            }
-
-            DispatchQueue.main.async {
-                let runningApps = NSWorkspace.shared.runningApplications
-                let mapped = parsed.map { entry -> PortItem in
-                    let icon = Int32(entry.pid).flatMap { pidInt in
-                        runningApps.first(where: { $0.processIdentifier == pidInt })?.icon
-                    }
-                    return PortItem(
-                        processName: entry.processName,
-                        pid: entry.pid,
-                        port: entry.port,
-                        protocolName: "TCP",
-                        icon: icon,
-                        state: .listening,
-                        user: entry.user,
-                        command: entry.processName,
-                        uptime: "Active now",
-                        loadDescription: "Listening"
-                    )
-                }
-
-                self.ports = mapped.sorted { (Int($0.port) ?? 0) < (Int($1.port) ?? 0) }
-                self.hasLoadedLivePorts = true
-                self.debugMessage = self.ports.isEmpty
-                    ? "No listening ports matched the current scan."
-                    : "Successfully fetched \(self.ports.count) ports."
-                self.applyAutoKillRules()
-            }
-        }
+    func quitApp() {
+        NSApp.terminate(nil)
     }
 
     func portActionLabel(for port: PortItem) -> String {
@@ -508,14 +466,152 @@ final class PortViewModel: ObservableObject {
         demoPorts.first { $0.port == port }
     }
 
+    private func requestPortRefresh() {
+        lastRefreshAt = Date()
+        debugMessage = "Fetching ports..."
+        refreshGeneration += 1
+        let generation = refreshGeneration
+
+        activeRefreshTask?.cancel()
+        activeRefreshTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let snapshots = try await self.portScanService.scanListeningPorts()
+                guard !Task.isCancelled else { return }
+                self.applyScanResult(snapshots, generation: generation)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.applyScanFailure(error, generation: generation)
+            }
+        }
+    }
+
+    private func applyScanResult(_ snapshots: [PortScanSnapshot], generation: Int) {
+        guard generation == refreshGeneration else { return }
+
+        ports = snapshots
+            .map(makePortItem(from:))
+            .sorted { (Int($0.port) ?? 0) < (Int($1.port) ?? 0) }
+        hasLoadedLivePorts = true
+        reconcileSelection()
+
+        debugMessage = ports.isEmpty
+            ? "No listening ports matched the current scan."
+            : "Successfully fetched \(ports.count) ports."
+
+        applyAutoKillRules()
+    }
+
+    private func applyScanFailure(_ error: Error, generation: Int) {
+        guard generation == refreshGeneration else { return }
+
+        ports = []
+        hasLoadedLivePorts = true
+        reconcileSelection()
+        debugMessage = error.localizedDescription
+    }
+
+    private func makePortItem(from snapshot: PortScanSnapshot) -> PortItem {
+        let icon = Int32(snapshot.pid).flatMap { NSRunningApplication(processIdentifier: $0)?.icon }
+
+        return PortItem(
+            processName: snapshot.processName,
+            pid: snapshot.pid,
+            port: snapshot.port,
+            protocolName: "TCP",
+            icon: icon,
+            state: .listening,
+            user: snapshot.user,
+            command: snapshot.processName,
+            uptime: "Active now",
+            loadDescription: "Listening"
+        )
+    }
+
+    private func killPorts(_ items: [PortItem], refreshAfterCompletion: Bool) async {
+        guard !items.isEmpty else { return }
+
+        var processedItems: [PortItem] = []
+
+        for item in items {
+            guard killInFlightPIDs.insert(item.pid).inserted else { continue }
+
+            let outcome = await processKillerService.kill(pid: item.pid)
+            killInFlightPIDs.remove(item.pid)
+
+            appendKillHistory(for: item, outcome: outcome)
+            processedItems.append(item)
+        }
+
+        guard !processedItems.isEmpty else {
+            debugMessage = "Those processes are already being terminated."
+            return
+        }
+
+        if refreshAfterCompletion {
+            requestPortRefresh()
+        }
+    }
+
+    private func appendKillHistory(for port: PortItem, outcome: KillCommandOutcome) {
+        killHistory.insert(
+            KillHistoryEntry(
+                port: port.port,
+                processName: port.processName,
+                pid: port.pid,
+                outcome: outcome.message
+            ),
+            at: 0
+        )
+        persistKillHistory()
+
+        selectedPortIDs.remove(port.id)
+        if selectedPortID == port.id {
+            selectedPortID = nil
+        }
+
+        debugMessage = outcome.message
+    }
+
+    private func applyImportedProfile(_ profile: ProProfile) {
+        pinnedBookmarks = profile.pinnedBookmarks
+        killHistory = profile.killHistory
+        autoKillRules = profile.autoKillRules
+        isAutoRefreshEnabled = profile.isAutoRefreshEnabled
+        refreshIntervalSeconds = max(3, min(profile.refreshIntervalSeconds, 60))
+
+        persistPinnedBookmarks()
+        persistKillHistory()
+        persistAutoKillRules()
+        persistBool(isAutoRefreshEnabled, forKey: StorageKey.isAutoRefreshEnabled)
+        persistDouble(refreshIntervalSeconds, forKey: StorageKey.refreshIntervalSeconds)
+        configureAutoRefresh()
+    }
+
     private func loadPersistedState() {
         hasCompletedOnboarding = persistBool(forKey: StorageKey.hasCompletedOnboarding)
-        isProUnlocked = persistBool(forKey: StorageKey.isProUnlocked)
         isAutoRefreshEnabled = persistBool(forKey: StorageKey.isAutoRefreshEnabled, defaultValue: true)
         refreshIntervalSeconds = persistDouble(forKey: StorageKey.refreshIntervalSeconds, defaultValue: 8)
         pinnedBookmarks = loadValue([PortBookmark].self, forKey: StorageKey.pinnedBookmarks) ?? []
         killHistory = loadValue([KillHistoryEntry].self, forKey: StorageKey.killHistory) ?? []
         autoKillRules = loadValue([AutoKillRule].self, forKey: StorageKey.autoKillRules) ?? []
+    }
+
+    private func updateLaunchAtLoginState(_ isEnabled: Bool) {
+        isLaunchAtLoginEnabled = isEnabled
+        persistBool(isEnabled, forKey: StorageKey.isLaunchAtLoginEnabled)
+    }
+
+    private func reconcileSelection() {
+        let liveIDs = Set(ports.map(\.id))
+        selectedPortIDs = selectedPortIDs.intersection(liveIDs)
+
+        if let selectedPortID, !liveIDs.contains(selectedPortID) {
+            self.selectedPortID = ports.first?.id
+        }
     }
 
     private func configureAutoRefresh() {
@@ -525,7 +621,7 @@ final class PortViewModel: ObservableObject {
         autoRefreshCancellable = Timer.publish(every: refreshIntervalSeconds, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.fetchActivePorts()
+                self?.requestPortRefresh()
             }
     }
 
@@ -574,15 +670,24 @@ final class PortViewModel: ObservableObject {
     }
 
     private func applyAutoKillRules() {
-        guard isProUnlocked, !autoKillRules.isEmpty, !ports.isEmpty else { return }
+        guard !autoKillRules.isEmpty, !ports.isEmpty else { return }
 
         let livePorts = ports
         var matchedPortIDs = Set<String>()
+        var matchedPorts: [PortItem] = []
+
         for rule in autoKillRules where rule.isEnabled {
             for port in livePorts where rule.matches(port) {
                 guard matchedPortIDs.insert(port.id).inserted else { continue }
-                killProcess(pid: port.pid, port: port)
+                guard !killInFlightPIDs.contains(port.pid) else { continue }
+                matchedPorts.append(port)
             }
+        }
+
+        guard !matchedPorts.isEmpty else { return }
+
+        Task { [weak self] in
+            await self?.killPorts(matchedPorts, refreshAfterCompletion: true)
         }
     }
 
@@ -712,7 +817,7 @@ enum AutoKillAction: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct ProProfile: Codable, Hashable {
+nonisolated struct ProProfile: Codable, Hashable {
     var pinnedBookmarks: [PortBookmark]
     var killHistory: [KillHistoryEntry]
     var autoKillRules: [AutoKillRule]
@@ -721,7 +826,7 @@ struct ProProfile: Codable, Hashable {
 }
 
 extension JSONEncoder {
-    static var portKillerProfile: JSONEncoder {
+    nonisolated static var portKillerProfile: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -730,7 +835,7 @@ extension JSONEncoder {
 }
 
 extension JSONDecoder {
-    static var portKillerProfile: JSONDecoder {
+    nonisolated static var portKillerProfile: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder

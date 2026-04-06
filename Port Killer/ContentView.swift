@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import StoreKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var viewModel: PortViewModel
@@ -15,6 +16,7 @@ struct ContentView: View {
 struct WorkspaceShellView: View {
     @EnvironmentObject private var viewModel: PortViewModel
     @EnvironmentObject private var proStore: ProPurchaseManager
+    @EnvironmentObject private var appRouter: AppRouter
 
     private var onboardingBinding: Binding<Bool> {
         Binding(
@@ -48,22 +50,16 @@ struct WorkspaceShellView: View {
                 }
             }
         }
-        .sheet(isPresented: $viewModel.showAppStorePreview) {
-            AppStorePreviewView()
-                .environmentObject(viewModel)
-                .environmentObject(proStore)
-                .frame(minWidth: 1040, minHeight: 800)
-        }
         .sheet(isPresented: onboardingBinding) {
             OnboardingView()
                 .environmentObject(viewModel)
                 .frame(minWidth: 980, minHeight: 740)
         }
-        .onAppear {
-            viewModel.setProUnlocked(proStore.isProUnlocked)
-        }
-        .onChange(of: proStore.isProUnlocked) { _, isUnlocked in
-            viewModel.setProUnlocked(isUnlocked)
+        .onChange(of: appRouter.pendingMainWindowRoute?.id) { _, _ in
+            guard let route = appRouter.pendingMainWindowRoute else { return }
+            viewModel.setSection(route.section)
+            viewModel.selectPort(withID: route.selectedPortID)
+            appRouter.consumePendingMainWindowRoute()
         }
     }
 }
@@ -137,22 +133,18 @@ struct WorkspaceSidebarView: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(proStore.isProUnlocked ? "Pro features unlocked." : "Professional performance analytics enabled.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.pkMuted)
-
                 Button {
-                    if proStore.isProUnlocked {
-                        viewModel.setSection(.proFeatures)
-                    } else {
-                        proStore.unlockProImmediately()
-                        viewModel.setSection(.proFeatures)
-                    }
+                    viewModel.quitApp()
                 } label: {
-                    Text(proStore.isProUnlocked ? "Manage Pro" : "Upgrade to Pro")
-                        .frame(maxWidth: .infinity)
+                    HStack(spacing: 6) {
+                        Image(systemName: "power")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Quit App")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PrimaryActionButtonStyle())
+                .buttonStyle(QuitButtonStyle())
             }
             .padding(.bottom, 18)
         }
@@ -240,7 +232,7 @@ struct WorkspaceHeaderBar: View {
         case .activePorts: return "Search ports, PIDs or processes..."
         case .favorites: return "Search pinned ports..."
         case .history: return "Search history..."
-        case .proFeatures: return "Search premium features..."
+        case .settings: return "Search settings..."
         }
     }
 }
@@ -315,8 +307,8 @@ struct WorkspaceSectionView: View {
                     FavoritesSectionView()
                 case .history:
                     HistorySectionView()
-                case .proFeatures:
-                    ProFeaturesSectionView()
+                case .settings:
+                    SettingsSectionView()
                 }
             }
             .padding(.horizontal, 24)
@@ -372,22 +364,25 @@ struct ActivePortsDashboardView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         TableHeaderRow()
 
-                        VStack(spacing: 0) {
-                            if viewModel.visiblePorts.isEmpty {
-                                EmptyTablePlaceholder()
-                            } else {
-                                ForEach(viewModel.visiblePorts) { port in
-                                    PortTableRowView(port: port)
-                                        .environmentObject(viewModel)
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                if viewModel.visiblePorts.isEmpty {
+                                    EmptyTablePlaceholder()
+                                } else {
+                                    ForEach(viewModel.visiblePorts) { port in
+                                        PortTableRowView(port: port)
+                                            .environmentObject(viewModel)
+                                    }
                                 }
                             }
                         }
+                        .frame(minHeight: 200, idealHeight: 350)
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 PortDetailPanel()
-                    .frame(width: 360)
+                    .frame(width: 340)
             }
 
             HStack(alignment: .top, spacing: 18) {
@@ -424,7 +419,7 @@ struct ActivePortsDashboardView: View {
         case "Explore Favorites":
             viewModel.setSection(.favorites)
         case "Enable Pro Monitoring":
-            viewModel.setSection(.proFeatures)
+            viewModel.setSection(.settings)
         default:
             viewModel.refresh()
         }
@@ -436,17 +431,17 @@ struct TableHeaderRow: View {
         HStack(spacing: 12) {
             Color.clear.frame(width: 24, height: 1)
             Text("PORT")
-            Spacer().frame(width: 96)
+                .frame(minWidth: 60, idealWidth: 72, alignment: .leading)
             Text("PROCESS")
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("PID")
-                .frame(width: 72, alignment: .leading)
+                .frame(minWidth: 60, idealWidth: 72, alignment: .leading)
             Text("USER")
-                .frame(width: 88, alignment: .leading)
+                .frame(minWidth: 70, idealWidth: 88, alignment: .leading)
             Text("STATUS")
-                .frame(width: 84, alignment: .leading)
+                .frame(minWidth: 70, idealWidth: 84, alignment: .leading)
             Text("COMMAND")
-                .frame(width: 240, alignment: .leading)
+                .frame(minWidth: 180, idealWidth: 240, alignment: .leading)
             Text("ACTION")
                 .frame(width: 88, alignment: .trailing)
         }
@@ -485,7 +480,7 @@ struct PortTableRowView: View {
             Text(port.port)
                 .font(.system(size: 16, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color.pkPrimary)
-                .frame(width: 72, alignment: .leading)
+                .frame(minWidth: 60, idealWidth: 72, alignment: .leading)
 
             HStack(spacing: 10) {
                 PortThumbnailView(port: port)
@@ -503,22 +498,22 @@ struct PortTableRowView: View {
             Text(port.pid)
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.pkText.opacity(0.82))
-                .frame(width: 72, alignment: .leading)
+                .frame(minWidth: 60, idealWidth: 72, alignment: .leading)
 
             Text(port.user ?? "admin")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(Color.pkMuted)
-                .frame(width: 88, alignment: .leading)
+                .frame(minWidth: 70, idealWidth: 88, alignment: .leading)
 
             StatusPill(state: port.state)
-                .frame(width: 84, alignment: .leading)
+                .frame(minWidth: 70, idealWidth: 84, alignment: .leading)
 
             Text(port.command ?? "/usr/local/bin/\(port.processName.lowercased())")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(Color.pkMuted.opacity(0.75))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(width: 240, alignment: .leading)
+                .frame(minWidth: 180, idealWidth: 240, alignment: .leading)
 
             Button {
                 viewModel.killProcess(pid: port.pid, port: port)
@@ -654,7 +649,7 @@ struct PortDetailPanel: View {
 
                     HStack(spacing: 10) {
                         SecondaryActionButton(title: "MONITOR", symbol: "chart.xyaxis.line") {
-                            viewModel.setSection(.proFeatures)
+                            viewModel.setSection(.settings)
                         }
 
                         Button {
@@ -1012,49 +1007,109 @@ struct HistoryRowView: View {
     }
 }
 
-struct ProFeaturesSectionView: View {
+struct SettingsSectionView: View {
     @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
-    @State private var ruleName = ""
-    @State private var rulePort = ""
-    @State private var ruleProcess = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             header
 
-            if proStore.isProUnlocked {
-                ProUnlockedDashboardView(
-                    ruleName: $ruleName,
-                    rulePort: $rulePort,
-                    ruleProcess: $ruleProcess
-                )
-                .environmentObject(viewModel)
-                .environmentObject(proStore)
-            } else {
-                ProUpsellDashboardView()
-                    .environmentObject(viewModel)
-                    .environmentObject(proStore)
+            CardShell(fill: Color.pkCard, radius: 18) {
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionHeading(title: "GENERAL", trailing: "PREFERENCES")
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Start at Login")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.pkText)
+                            Text("Automatically start Port Killer when you log in")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.pkMuted)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            viewModel.toggleLaunchAtLogin()
+                        } label: {
+                            Image(systemName: viewModel.isLaunchAtLoginEnabled ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(viewModel.isLaunchAtLoginEnabled ? Color.pkPrimary : Color.pkMuted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            CardShell(fill: Color.pkCard, radius: 18) {
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionHeading(title: "MONITORING", trailing: "REFRESH")
+
+                    HStack {
+                        Text("Auto refresh")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.pkText)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { viewModel.isAutoRefreshEnabled },
+                            set: { viewModel.setAutoRefreshEnabled($0) }
+                        ))
+                        .labelsHidden()
+                    }
+
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("Refresh interval")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.pkText)
+                            Spacer()
+                            Text("\(Int(viewModel.refreshIntervalSeconds)) s")
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.pkPrimary)
+                        }
+
+                        Slider(value: Binding(
+                            get: { viewModel.refreshIntervalSeconds },
+                            set: { viewModel.setRefreshIntervalSeconds($0) }
+                        ), in: 3...60, step: 1)
+                    }
+
+                    SecondaryActionButton(title: "Refresh Now", symbol: "arrow.clockwise") {
+                        viewModel.refresh()
+                    }
+                }
+            }
+
+            CardShell(fill: Color.pkCard, radius: 18) {
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionHeading(title: "ABOUT", trailing: "APP INFO")
+
+                    HStack {
+                        Text("Port Killer")
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(Color.pkText)
+                        Text("v2.4.0")
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.pkMuted)
+                    }
+
+                    Text("All power tools are included in this build.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.pkMuted)
+                }
             }
         }
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(proStore.isProUnlocked ? "Pro unlocked for this Mac" : "Precision Mastery for")
-                    .font(.system(size: 34, weight: .black))
-                    .foregroundStyle(Color.pkText)
-                Text(proStore.isProUnlocked ? "All premium controls are active." : "Professional Power Users")
-                    .font(.system(size: 34, weight: .black))
-                    .foregroundStyle(Color.pkPrimary)
-                Text(proStore.isProUnlocked ? "Advanced monitoring, automation, and sync tools are now available." : "Level up your local development environment with industrial-grade monitoring, automation, and analytics.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.pkMuted)
-                    .frame(maxWidth: 620, alignment: .leading)
-            }
-
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Settings")
+                .font(.system(size: 34, weight: .black))
+                .foregroundStyle(Color.pkText)
+            Text("Configure your Port Killer experience")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.pkMuted)
         }
     }
 }
@@ -1134,6 +1189,17 @@ struct ProUnlockedDashboardView: View {
     @Binding var ruleName: String
     @Binding var rulePort: String
     @Binding var ruleProcess: String
+    @State private var isExportingProfile = false
+    @State private var isImportingProfile = false
+    @State private var exportDocument = ProProfileDocument(
+        profile: ProProfile(
+            pinnedBookmarks: [],
+            killHistory: [],
+            autoKillRules: [],
+            refreshIntervalSeconds: 8,
+            isAutoRefreshEnabled: true
+        )
+    )
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -1230,21 +1296,22 @@ struct ProUnlockedDashboardView: View {
 
                         HStack(spacing: 10) {
                             SecondaryActionButton(title: "Export Profile", symbol: "square.and.arrow.up") {
-                                viewModel.exportProProfile()
+                                exportDocument = ProProfileDocument(profile: viewModel.currentProProfile())
+                                isExportingProfile = true
                             }
 
                             SecondaryActionButton(title: "Import Profile", symbol: "square.and.arrow.down") {
-                                viewModel.importProProfile()
+                                isImportingProfile = true
                             }
                         }
 
                         HStack(spacing: 10) {
-                            SecondaryActionButton(title: "Manage Subscription", symbol: "gearshape") {
-                                proStore.openManageSubscriptions()
+                            SecondaryActionButton(title: "Refresh Status", symbol: "checkmark.seal") {
+                                Task { await proStore.refreshCatalog() }
                             }
 
-                            SecondaryActionButton(title: "Restore", symbol: "arrow.clockwise") {
-                                Task { await proStore.restorePurchases() }
+                            SecondaryActionButton(title: "Run Scan", symbol: "arrow.clockwise") {
+                                viewModel.refresh()
                             }
                         }
                     }
@@ -1253,10 +1320,10 @@ struct ProUnlockedDashboardView: View {
                 CardShell(fill: Color.pkCard, radius: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         SectionHeading(title: "PRO STATUS", trailing: "ENTITLEMENT")
-                        Text("Unlocked on this Mac")
+                        Text("Included by default")
                             .font(.system(size: 20, weight: .black))
                             .foregroundStyle(Color.pkSecondary)
-                        Text(proStore.statusMessage ?? "Active entitlement detected through StoreKit.")
+                        Text(proStore.statusMessage ?? "All power tools are available.")
                             .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(Color.pkMuted)
 
@@ -1264,6 +1331,21 @@ struct ProUnlockedDashboardView: View {
                     }
                 }
             }
+        }
+        .fileExporter(
+            isPresented: $isExportingProfile,
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: "PortKiller-ProProfile"
+        ) { result in
+            viewModel.noteProfileExportCompletion(result)
+        }
+        .fileImporter(
+            isPresented: $isImportingProfile,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            viewModel.importProProfile(from: result)
         }
     }
 }
@@ -1448,56 +1530,6 @@ struct CapabilityIndicator: View {
     var body: some View {
         Image(systemName: isOn ? "checkmark.circle.fill" : "circle.fill")
             .foregroundStyle(isOn ? Color.pkSuccess : Color.pkMuted.opacity(0.55))
-    }
-}
-
-struct PricingCard: View {
-    let title: String
-    let subtitle: String
-    let price: String
-    let footnote: String
-    let buttonLabel: String
-    let isFeatured: Bool
-    let action: () -> Void
-
-    var body: some View {
-        CardShell(fill: isFeatured ? Color.pkElevated.opacity(0.95) : Color.pkCard, radius: 18) {
-            VStack(alignment: .leading, spacing: 12) {
-                if isFeatured {
-                    Text("BEST VALUE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.pkPrimary)
-                }
-
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.pkText)
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color.pkMuted)
-                Text(price)
-                    .font(.system(size: 34, weight: .black))
-                    .foregroundStyle(Color.pkText)
-                Text(footnote)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.pkMuted.opacity(0.7))
-
-                if isFeatured {
-                    Button(action: action) {
-                        Text(buttonLabel)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PrimaryActionButtonStyle())
-                } else {
-                    Button(action: action) {
-                        Text(buttonLabel)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryActionButtonStyle())
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -1844,8 +1876,14 @@ struct OnboardingBullet<Content: View>: View {
 
 struct MenuBarPopoverView: View {
     @EnvironmentObject private var viewModel: PortViewModel
+    @EnvironmentObject private var appRouter: AppRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    @State private var searchText = ""
+
+    private var filteredPorts: [PortItem] {
+        viewModel.ports(matching: searchText)
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
@@ -1856,11 +1894,11 @@ struct MenuBarPopoverView: View {
                         .foregroundStyle(Color.pkText)
                     Spacer()
                     HeaderIconButton(systemName: "clock.arrow.circlepath") {
-                        viewModel.setSection(.history)
+                        openMainWindow(section: .history)
                     }
                     .frame(width: 22, height: 22)
                     HeaderIconButton(systemName: "line.3.horizontal.decrease.circle") {
-                        viewModel.refresh()
+                        openMainWindow(section: .favorites)
                     }
                     .frame(width: 22, height: 22)
                     HeaderIconButton(systemName: "arrow.clockwise") {
@@ -1873,16 +1911,16 @@ struct MenuBarPopoverView: View {
                 .background(Color.pkSurface.opacity(0.9))
 
                 VStack(spacing: 10) {
-                    SearchBar(text: $viewModel.searchText, placeholder: "Search ports or PIDs...")
+                    SearchBar(text: $searchText, placeholder: "Search ports or PIDs...")
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("SYSTEM ACTIVITY")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color.pkMuted)
                             Spacer()
-                            Text(viewModel.visiblePorts.isEmpty ? "STANDBY" : "HEALTHY")
+                            Text(filteredPorts.isEmpty ? "STANDBY" : "HEALTHY")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(viewModel.visiblePorts.isEmpty ? Color.pkMuted : Color.pkSecondary)
+                                .foregroundStyle(filteredPorts.isEmpty ? Color.pkMuted : Color.pkSecondary)
                         }
                         HeatmapStripView(states: viewModel.activityHeatmapState)
                             .frame(height: 10)
@@ -1905,7 +1943,7 @@ struct MenuBarPopoverView: View {
                     .padding(.vertical, 10)
 
                     VStack(spacing: 0) {
-                        ForEach(viewModel.visiblePorts) { port in
+                        ForEach(filteredPorts) { port in
                             MenuPortRowView(port: port)
                                 .environmentObject(viewModel)
                         }
@@ -1915,7 +1953,7 @@ struct MenuBarPopoverView: View {
 
                 VStack(spacing: 10) {
                     Button {
-                        viewModel.killSelectedPorts()
+                        viewModel.killBusyPorts(matching: searchText)
                     } label: {
                         Text("Kill All High Usage")
                             .frame(maxWidth: .infinity)
@@ -1923,9 +1961,7 @@ struct MenuBarPopoverView: View {
                     .buttonStyle(PrimaryActionButtonStyle())
 
                     Button {
-                        dismiss()
-                        openWindow(id: "main")
-                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        openMainWindow()
                     } label: {
                         Text("Open Full App")
                             .font(.system(size: 12, weight: .medium))
@@ -1941,6 +1977,13 @@ struct MenuBarPopoverView: View {
         .scrollIndicators(.visible)
         .frame(width: 320, height: 560)
         .background(Color.pkSidebar)
+    }
+
+    private func openMainWindow(section: AppSection = .activePorts) {
+        dismiss()
+        appRouter.showMainWindow(section: section)
+        openWindow(id: "main")
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }
 
@@ -2331,6 +2374,23 @@ struct PrimaryActionButtonStyle: ButtonStyle {
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.pkPrimary.opacity(configuration.isPressed ? 0.84 : 1))
+            )
+    }
+}
+
+struct QuitButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .bold))
+            .padding(.vertical, 10)
+            .foregroundStyle(Color.pkDangerText.opacity(configuration.isPressed ? 0.7 : 1))
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.pkDanger.opacity(configuration.isPressed ? 0.5 : 0.3))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.pkDanger.opacity(0.5), lineWidth: 1)
+                    )
             )
     }
 }
