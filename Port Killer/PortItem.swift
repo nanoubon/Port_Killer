@@ -5,7 +5,7 @@ enum AppSection: String, CaseIterable, Identifiable, Codable {
     case activePorts
     case favorites
     case history
-    case proFeatures
+    case settings
 
     var id: String { rawValue }
 
@@ -14,7 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable, Codable {
         case .activePorts: return "Active Ports"
         case .favorites: return "Favorites"
         case .history: return "History"
-        case .proFeatures: return "Pro Features"
+        case .settings: return "Settings"
         }
     }
 
@@ -23,16 +23,16 @@ enum AppSection: String, CaseIterable, Identifiable, Codable {
         case .activePorts: return "Real-time listening sockets"
         case .favorites: return "Pinned environments and quick access"
         case .history: return "Recent terminations and audits"
-        case .proFeatures: return "Premium monitoring and automation"
+        case .settings: return "App preferences and configuration"
         }
     }
 
     var symbolName: String {
         switch self {
-        case .activePorts: return "lan"
-        case .favorites: return "star"
-        case .history: return "clock"
-        case .proFeatures: return "workspace_premium"
+        case .activePorts: return "antenna.radiowaves.left.and.right"
+        case .favorites: return "star.fill"
+        case .history: return "clock.arrow.circlepath"
+        case .settings: return "gearshape.fill"
         }
     }
 }
