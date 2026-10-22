@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import StoreKit
 import UniformTypeIdentifiers
 
 struct ActivePortsDashboardView: View {
@@ -61,35 +60,6 @@ struct ActivePortsDashboardView: View {
                     .frame(width: 340)
             }
 
-            HStack(alignment: .top, spacing: 18) {
-                CardShell(fill: Color.pkCard, radius: 18) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        SectionHeading(title: "QUICK COMMANDS", trailing: "LIVE SUGGESTIONS")
-
-                        VStack(spacing: 10) {
-                            ForEach(viewModel.quickActions) { action in
-                                QuickActionCard(action: action) {
-                                    handleQuickAction(action)
-                                }
-                            }
-                        }
-                    }
-                }
-                .frame(width: 300)
-            }
-        }
-    }
-
-    private func handleQuickAction(_ action: QuickAction) {
-        switch action.title {
-        case "Refresh Scan":
-            viewModel.refresh()
-        case "Explore Favorites":
-            viewModel.setSection(.favorites)
-        case "Enable Pro Monitoring":
-            viewModel.setSection(.settings)
-        default:
-            viewModel.refresh()
         }
     }
 }
@@ -320,10 +290,6 @@ struct PortDetailPanel: View {
                     }
 
                     HStack(spacing: 10) {
-                        SecondaryActionButton(title: "MONITOR", symbol: "chart.xyaxis.line") {
-                            viewModel.setSection(.settings)
-                        }
-
                         if port.isReadOnly {
                             Button {
                                 viewModel.copySudoKillCommand(for: port)

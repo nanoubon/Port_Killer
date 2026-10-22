@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import StoreKit
 import UniformTypeIdentifiers
 
 struct SectionHeading: View {
@@ -227,22 +226,11 @@ extension Color {
     static let pkWarning = Color(red: 1.00, green: 0.70, blue: 0.65)
     static let pkDanger = Color(red: 0.68, green: 0.02, blue: 0.08)
     static let pkDangerText = Color(red: 1.00, green: 0.85, blue: 0.84)
-
-    static func token(_ token: ColorToken) -> Color {
-        switch token {
-        case .primary: return pkPrimary
-        case .secondary: return pkSecondary
-        case .warning: return pkWarning
-        case .danger: return pkDangerText
-        case .neutral: return pkText
-        }
-    }
 }
 
 #Preview {
     ContentView()
         .environmentObject(PortViewModel())
-        .environmentObject(ProPurchaseManager())
         .frame(width: 1360, height: 960)
 }
 

@@ -1,11 +1,9 @@
 import AppKit
 import SwiftUI
-import StoreKit
 import UniformTypeIdentifiers
 
 struct WorkspaceSidebarView: View {
     @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -14,9 +12,6 @@ struct WorkspaceSidebarView: View {
                     .font(.system(size: 22, weight: .black, design: .default))
                     .tracking(-0.4)
                     .foregroundStyle(Color.pkText)
-                Text("v2.4.0")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.pkMuted)
             }
             .padding(.top, 20)
 
@@ -118,11 +113,6 @@ struct WorkspaceHeaderBar: View {
                 viewModel.refresh()
             }
             .help("Refresh port list")
-
-            HeaderIconButton(systemName: "clock.arrow.circlepath") {
-                viewModel.setSection(.history)
-            }
-            .help("Open history")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
@@ -133,7 +123,6 @@ struct WorkspaceHeaderBar: View {
         switch viewModel.selectedSection {
         case .activePorts: return "Search ports, PIDs or processes..."
         case .favorites: return "Search pinned ports..."
-        case .history: return "Search history..."
         case .settings: return "Search settings..."
         }
     }
@@ -207,8 +196,6 @@ struct WorkspaceSectionView: View {
                     ActivePortsDashboardView()
                 case .favorites:
                     FavoritesSectionView()
-                case .history:
-                    HistorySectionView()
                 case .settings:
                     SettingsSectionView()
                 }

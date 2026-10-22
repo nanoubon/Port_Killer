@@ -203,23 +203,21 @@ actor ProcessKillerService {
 
 @MainActor
 struct LaunchAtLoginService {
-    private var loginItemIdentifier: String {
-        (Bundle.main.bundleIdentifier ?? "com.portkiller.app") + ".launchhelper"
-    }
+    /// Source of truth for the Start at login switch; never cached or persisted.
+    var status: SMAppService.Status { SMAppService.mainApp.status }
 
-    func currentStatus() -> Bool {
-        let service = SMAppService.loginItem(identifier: loginItemIdentifier)
-        return service.status == .enabled
-    }
-
-    @discardableResult
-    func setEnabled(_ enabled: Bool) throws -> Bool {
-        let service = SMAppService.loginItem(identifier: loginItemIdentifier)
+    func setEnabled(_ enabled: Bool) throws {
+        let service = SMAppService.mainApp
         if enabled {
+            guard service.status != .enabled else { return }
             try service.register()
         } else {
+            guard service.status != .notRegistered else { return }
             try service.unregister()
         }
-        return service.status == .enabled
+    }
+
+    func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
     }
 }

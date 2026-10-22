@@ -1,34 +1,20 @@
 import AppKit
 import SwiftUI
-import StoreKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
 
     var body: some View {
         WorkspaceShellView()
             .killConfirmation(origin: .mainWindow)
-            .preferredColorScheme(.dark)
+            .onAppear { viewModel.screenDidAppear() }
+            .onDisappear { viewModel.screenDidDisappear() }
     }
 }
 
 struct WorkspaceShellView: View {
     @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
-    @EnvironmentObject private var appRouter: AppRouter
-
-    private var onboardingBinding: Binding<Bool> {
-        Binding(
-            get: { !viewModel.hasCompletedOnboarding },
-            set: { presented in
-                if !presented {
-                    viewModel.completeOnboarding()
-                }
-            }
-        )
-    }
 
     var body: some View {
         ZStack {
@@ -50,17 +36,6 @@ struct WorkspaceShellView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-        }
-        .sheet(isPresented: onboardingBinding) {
-            OnboardingView()
-                .environmentObject(viewModel)
-                .frame(minWidth: 980, minHeight: 740)
-        }
-        .onChange(of: appRouter.pendingMainWindowRoute?.id) { _, _ in
-            guard let route = appRouter.pendingMainWindowRoute else { return }
-            viewModel.setSection(route.section)
-            viewModel.selectPort(withID: route.selectedPortID)
-            appRouter.consumePendingMainWindowRoute()
         }
     }
 }

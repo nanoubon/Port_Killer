@@ -1,11 +1,9 @@
 import AppKit
 import SwiftUI
-import StoreKit
 import UniformTypeIdentifiers
 
 struct MenuBarPopoverView: View {
     @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var appRouter: AppRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var searchText = ""
@@ -22,14 +20,6 @@ struct MenuBarPopoverView: View {
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.pkText)
                     Spacer()
-                    HeaderIconButton(systemName: "clock.arrow.circlepath") {
-                        openMainWindow(section: .history)
-                    }
-                    .frame(width: 22, height: 22)
-                    HeaderIconButton(systemName: "line.3.horizontal.decrease.circle") {
-                        openMainWindow(section: .favorites)
-                    }
-                    .frame(width: 22, height: 22)
                     HeaderIconButton(systemName: "arrow.clockwise") {
                         viewModel.refresh()
                     }
@@ -97,11 +87,12 @@ struct MenuBarPopoverView: View {
         .frame(width: 320, height: 560)
         .background(Color.pkSidebar)
         .killConfirmation(origin: .menuBar)
+        .onAppear { viewModel.screenDidAppear() }
+        .onDisappear { viewModel.screenDidDisappear() }
     }
 
-    private func openMainWindow(section: AppSection = .activePorts) {
+    private func openMainWindow() {
         dismiss()
-        appRouter.showMainWindow(section: section)
         openWindow(id: "main")
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
@@ -183,67 +174,6 @@ struct MenuPortRowView: View {
         case .idle: return Color.pkMuted
         case .dormant: return Color.pkSurface
         }
-    }
-}
-
-struct QuickActionCard: View {
-    let action: QuickAction
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(action.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.pkText)
-                    Text(action.subtitle)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(Color.pkMuted)
-                }
-                Spacer()
-                Image(systemName: action.symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.pkPrimary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.pkSurface)
-                    )
-            }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.pkElevated)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.pkStroke.opacity(0.5), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct MetricCardView: View {
-    let metric: DashboardMetric
-
-    var body: some View {
-        CardShell(fill: Color.pkCard, radius: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(metric.title)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.pkMuted.opacity(0.7))
-                Text(metric.value)
-                    .font(.system(size: 28, weight: .black, design: .default))
-                    .foregroundStyle(Color.token(metric.tint))
-                Text(metric.detail)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.pkMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(minHeight: 90, alignment: .topLeading)
     }
 }
 

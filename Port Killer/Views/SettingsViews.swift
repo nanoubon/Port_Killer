@@ -1,6 +1,6 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
-import StoreKit
 import UniformTypeIdentifiers
 
 struct SettingsSectionView: View {
@@ -34,6 +34,17 @@ struct SettingsSectionView: View {
                                 .foregroundStyle(viewModel.isLaunchAtLoginEnabled ? Color.pkPrimary : Color.pkMuted)
                         }
                         .buttonStyle(.plain)
+                    }
+
+                    if let message = viewModel.launchAtLoginMessage {
+                        Text(message)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.pkWarning)
+                    }
+                    if viewModel.launchAtLoginStatus == .requiresApproval {
+                        SecondaryActionButton(title: "Open Login Items Settings", symbol: "gearshape") {
+                            viewModel.openLoginItemsSettings()
+                        }
                     }
                 }
             }
@@ -85,14 +96,7 @@ struct SettingsSectionView: View {
                         Text("Port Killer")
                             .font(.system(size: 18, weight: .black))
                             .foregroundStyle(Color.pkText)
-                        Text("v2.4.0")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.pkMuted)
                     }
-
-                    Text("All power tools are included in this build.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.pkMuted)
                 }
             }
         }

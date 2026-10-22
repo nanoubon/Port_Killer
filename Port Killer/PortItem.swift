@@ -4,7 +4,6 @@ import Foundation
 enum AppSection: String, CaseIterable, Identifiable, Codable {
     case activePorts
     case favorites
-    case history
     case settings
 
     var id: String { rawValue }
@@ -13,7 +12,6 @@ enum AppSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .activePorts: return "Active Ports"
         case .favorites: return "Favorites"
-        case .history: return "History"
         case .settings: return "Settings"
         }
     }
@@ -22,7 +20,6 @@ enum AppSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .activePorts: return "Real-time listening sockets"
         case .favorites: return "Pinned environments and quick access"
-        case .history: return "Recent terminations and audits"
         case .settings: return "App preferences and configuration"
         }
     }
@@ -31,7 +28,6 @@ enum AppSection: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .activePorts: return "antenna.radiowaves.left.and.right"
         case .favorites: return "star.fill"
-        case .history: return "clock.arrow.circlepath"
         case .settings: return "gearshape.fill"
         }
     }
@@ -139,47 +135,6 @@ struct PortBookmark: Identifiable, Codable, Hashable {
     init(portItem: PortItem) {
         self.init(port: portItem.port, processName: portItem.processName, user: portItem.user)
     }
-}
-
-struct KillHistoryEntry: Identifiable, Codable, Hashable {
-    let id: UUID
-    let port: String
-    let processName: String
-    let pid: String
-    let createdAt: Date
-    let outcome: String
-
-    init(
-        id: UUID = UUID(),
-        port: String,
-        processName: String,
-        pid: String,
-        createdAt: Date = Date(),
-        outcome: String
-    ) {
-        self.id = id
-        self.port = port
-        self.processName = processName
-        self.pid = pid
-        self.createdAt = createdAt
-        self.outcome = outcome
-    }
-}
-
-struct DashboardMetric: Identifiable, Hashable {
-    let id = UUID()
-    let title: String
-    let value: String
-    let tint: ColorToken
-    let detail: String
-}
-
-enum ColorToken {
-    case primary
-    case secondary
-    case warning
-    case danger
-    case neutral
 }
 
 extension NSImage {
