@@ -13,7 +13,7 @@ struct PortScanSnapshot: Sendable, Hashable {
     /// "root", a username, or "other user". Only set for read-only rows.
     let ownerLabel: String?
 
-    init(
+    nonisolated init(
         processName: String, pid: String, user: String, port: String, addresses: [String] = [],
         isReadOnly: Bool = false, ownerLabel: String? = nil
     ) {

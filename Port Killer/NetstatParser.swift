@@ -8,6 +8,13 @@ struct NetstatRow: Sendable, Hashable {
     let port: String
     /// Bind addresses in first-seen order ("*", "127.0.0.1", "::1").
     let addresses: [String]
+
+    nonisolated init(processName: String, pid: String, port: String, addresses: [String]) {
+        self.processName = processName
+        self.pid = pid
+        self.port = port
+        self.addresses = addresses
+    }
 }
 
 /// Pure parser for `netstat -anv -p tcp`. No I/O, no actor state.
@@ -18,8 +25,8 @@ struct NetstatRow: Sendable, Hashable {
 /// (state, options, gencnt, flags, flags1, usecnt, rtncnt, fltrs). The pid is read from the right
 /// of the column, after the last colon.
 enum NetstatParser {
-    private static let leadingColumns = 10
-    private static let trailingColumns = 8
+    private nonisolated static let leadingColumns = 10
+    private nonisolated static let trailingColumns = 8
 
     nonisolated static func parse(_ output: String) -> [NetstatRow] {
         struct Entry {

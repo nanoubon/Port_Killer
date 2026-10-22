@@ -4,7 +4,6 @@ struct PortItem: Identifiable, Hashable {
     let processName: String
     let pid: String
     let port: String
-    let protocolName: String
     var user: String?
     /// Bind addresses (merged IPv4 + IPv6), e.g. ["*"] or ["127.0.0.1", "::1"].
     var addresses: [String]
@@ -21,7 +20,6 @@ struct PortItem: Identifiable, Hashable {
         processName: String,
         pid: String,
         port: String,
-        protocolName: String,
         user: String? = nil,
         addresses: [String] = [],
         isReadOnly: Bool = false,
@@ -30,7 +28,6 @@ struct PortItem: Identifiable, Hashable {
         self.processName = processName
         self.pid = pid
         self.port = port
-        self.protocolName = protocolName
         self.user = user
         self.addresses = addresses
         self.isReadOnly = isReadOnly

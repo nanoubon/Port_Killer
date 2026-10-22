@@ -63,7 +63,7 @@ final class LsofParserTests: XCTestCase {
 
     func testIdsAreUniquePerProcessPort() throws {
         let rows = LsofParser.parse(try fixture("ipv6")) + LsofParser.parse(try fixture("normal"))
-        let ids = rows.map { PortItem(processName: $0.processName, pid: $0.pid, port: $0.port, protocolName: "TCP").id }
+        let ids = rows.map { PortItem(processName: $0.processName, pid: $0.pid, port: $0.port).id }
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 }

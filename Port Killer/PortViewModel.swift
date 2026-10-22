@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import Foundation
 import ServiceManagement
-import SwiftUI
 
 @MainActor
 final class PortViewModel: ObservableObject {
@@ -16,15 +15,29 @@ final class PortViewModel: ObservableObject {
     @Published private(set) var launchAtLoginStatus: SMAppService.Status = .notRegistered
     /// Non-nil when the last register/unregister attempt failed.
     @Published private(set) var launchAtLoginMessage: String?
-    @Published var lastRefreshAt: Date?
     @Published var hasLoadedLivePorts: Bool = false
     /// Non-nil when the last scan failed, so the UI does not present a failure as "no ports".
     @Published var scanError: String?
     @Published var pendingKill: KillRequest?
     @Published var pendingForceKill: KillRequest?
-    @Published var resultBanner: String?
+    @Published private(set) var resultBanner: String?
+    /// The one surface that shows `resultBanner` (a banner is never shown in two windows at once).
+    @Published private(set) var bannerOrigin: KillOrigin = .mainWindow
+    /// Surfaces (popover, main window) that are really on screen right now. The refresh timer runs
+    /// only while this is non-empty. Driven from NSWindow state, see `WindowVisibilityReader`.
+    @Published private(set) var visibleSurfaces = Set<String>()
+
+    enum Surface {
+        static let popover = "popover"
+        static let mainWindow = "main"
+    }
+
+    static let readOnlyMessage = "process ของ root/user อื่น ปิดจากแอปนี้ไม่ได้ ใช้ sudo kill ในเทอร์มินัล"
 
     private var pendingExpiryTask: Task<Void, Never>?
+    private var expiryPaused = false
+    private var bannerPaused = false
+    private var observers: [NSObjectProtocol] = []
     private static let pendingLifetimeNanoseconds: UInt64 = 30_000_000_000
 
     private let portScanService = PortScanService()
@@ -32,8 +45,6 @@ final class PortViewModel: ObservableObject {
     private let launchAtLoginService = LaunchAtLoginService()
 
     static let defaultRefreshInterval: Double = 5
-    private var visibleSurfaceCount = 0
-    private var needsPinMigration = true
     private var autoRefreshCancellable: AnyCancellable?
     private var activeRefreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
@@ -64,9 +75,16 @@ final class PortViewModel: ObservableObject {
         loadPersistedState()
         refreshLaunchAtLoginStatus()
         requestPortRefresh()
+        // A confirmation must not survive the user leaving the app.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cancelAllPending() }
+        })
     }
 
     deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
         activeRefreshTask?.cancel()
         autoRefreshCancellable?.cancel()
     }
@@ -74,8 +92,6 @@ final class PortViewModel: ObservableObject {
     var selectedPorts: [PortItem] {
         ports.filter { selectedPortIDs.contains($0.id) && !$0.isReadOnly }
     }
-
-    var pinnedBookmarks: [PortBookmark] { pinStore.bookmarks }
 
     /// One entry per pin. `liveItem == nil` means "not running": show it dimmed, never killable, unpin only.
     var pinnedEntries: [PinnedEntry] {
@@ -117,18 +133,18 @@ final class PortViewModel: ObservableObject {
     func killProcess(pid: String, port: PortItem? = nil, origin: KillOrigin = .mainWindow) {
         let candidate = port ?? ports.first { $0.pid == pid }
         guard let candidate else {
-            showBanner("ไม่พบ process ที่เลือก")
+            showBanner("ไม่พบ process ที่เลือก", origin: origin)
             return
         }
         requestKill([candidate], origin: origin)
     }
 
     /// Copies `sudo kill <pid>` for read-only (root / other user) rows. Nothing is executed.
-    func copySudoKillCommand(for port: PortItem) {
+    func copySudoKillCommand(for port: PortItem, origin: KillOrigin? = nil) {
         guard let pid = Int32(port.pid), pid > 1 else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("sudo kill \(pid)", forType: .string)
-        showBanner("คัดลอก sudo kill \(pid) แล้ว")
+        showBanner("คัดลอก sudo kill \(pid) แล้ว", origin: origin)
     }
 
     /// Kill request for specific rows (context menu). Read-only and unknown ids are dropped by `requestKill`.
@@ -141,7 +157,8 @@ final class PortViewModel: ObservableObject {
     func killSelectedPorts(origin: KillOrigin = .mainWindow) {
         let items = selectedPorts
         guard !items.isEmpty else {
-            showBanner("เลือกอย่างน้อยหนึ่งรายการก่อน")
+            let onlyReadOnly = ports.contains { selectedPortIDs.contains($0.id) && $0.isReadOnly }
+            showBanner(onlyReadOnly ? Self.readOnlyMessage : "เลือกอย่างน้อยหนึ่งรายการก่อน", origin: origin)
             return
         }
         requestKill(items, origin: origin)
@@ -149,7 +166,7 @@ final class PortViewModel: ObservableObject {
 
     private func requestKill(_ candidates: [PortItem], origin: KillOrigin) {
         guard hasLoadedLivePorts else {
-            showBanner("ยังไม่ได้สแกน port")
+            showBanner("ยังไม่ได้สแกน port", origin: origin)
             return
         }
         // Defense in depth: read-only (root / other user) rows can never be killed from the app,
@@ -158,14 +175,14 @@ final class PortViewModel: ObservableObject {
             item.isReadOnly || (self.ports.first { $0.id == item.id }?.isReadOnly ?? false)
         }
         if candidates.contains(where: isReadOnly) {
-            showBanner("process ของ root/user อื่น ปิดจากแอปนี้ไม่ได้ ใช้ sudo kill ในเทอร์มินัล")
+            showBanner(Self.readOnlyMessage, origin: origin)
         }
         // Only items that are in the current scan result can be requested.
         let live = candidates.compactMap { candidate in
             isReadOnly(candidate) ? nil : ports.first { $0.id == candidate.id }
         }
         guard !live.isEmpty else {
-            if !candidates.contains(where: isReadOnly) { showBanner("process นี้ไม่อยู่ในรายการแล้ว") }
+            if !candidates.contains(where: isReadOnly) { showBanner("process นี้ไม่อยู่ในรายการแล้ว", origin: origin) }
             return
         }
 
@@ -204,26 +221,57 @@ final class PortViewModel: ObservableObject {
         }
 
         if refusedSelf {
-            showBanner("ไม่สามารถปิด Port Killer เองได้")
+            showBanner("ไม่สามารถปิด Port Killer เองได้", origin: origin)
         } else if refusedUnverifiable && entries.isEmpty {
-            showBanner("ตรวจสอบ process ไม่ได้ (อาจปิดไปแล้ว)")
+            showBanner("ตรวจสอบ process ไม่ได้ (อาจปิดไปแล้ว)", origin: origin)
         }
         guard !entries.isEmpty else { return }
         setPending(kill: KillRequest(origin: origin, entries: entries), force: nil)
     }
 
-    /// One pending request at a time across all origins; expires after 30 seconds.
+    /// One pending request at a time across all origins; expires after 30 seconds unless the
+    /// confirmation panel has keyboard/VoiceOver focus (see `setPendingExpiryPaused`).
     private func setPending(kill: KillRequest?, force: KillRequest?) {
-        pendingExpiryTask?.cancel()
         pendingKill = kill
         pendingForceKill = force
-        guard kill != nil || force != nil else { return }
+        expiryPaused = false
+        startExpiryTimer()
+    }
+
+    private func startExpiryTimer() {
+        pendingExpiryTask?.cancel()
+        pendingExpiryTask = nil
+        guard !expiryPaused, pendingKill != nil || pendingForceKill != nil else { return }
         pendingExpiryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.pendingLifetimeNanoseconds)
             guard !Task.isCancelled else { return }
-            self?.pendingKill = nil
-            self?.pendingForceKill = nil
+            self?.expirePending()
         }
+    }
+
+    private func expirePending() {
+        let origin = pendingKill?.origin ?? pendingForceKill?.origin
+        pendingKill = nil
+        pendingForceKill = nil
+        pendingExpiryTask = nil
+        showBanner("คำขอปิด process หมดเวลาแล้ว ไม่มีการส่งสัญญาณ", origin: origin)
+    }
+
+    /// The panel calls this with `true` while any of its controls has focus: the 30 s clock stops
+    /// so a slow keyboard / VoiceOver user is not timed out mid-decision.
+    func setPendingExpiryPaused(_ paused: Bool) {
+        guard paused != expiryPaused else { return }
+        expiryPaused = paused
+        startExpiryTimer()
+    }
+
+    func isPending(for origin: KillOrigin) -> Bool {
+        pendingKill?.origin == origin || pendingForceKill?.origin == origin
+    }
+
+    func cancelAllPending() {
+        guard pendingKill != nil || pendingForceKill != nil else { return }
+        setPending(kill: nil, force: nil)
     }
 
     func cancelPendingKill() {
@@ -256,14 +304,48 @@ final class PortViewModel: ObservableObject {
         }
     }
 
-    func showBanner(_ message: String) {
+    /// Shows `message` in exactly one surface: `origin` if given, else the popover while it is
+    /// open, else the main window. Also announced to VoiceOver.
+    func showBanner(_ message: String, origin: KillOrigin? = nil) {
+        bannerOrigin = origin ?? (visibleSurfaces.contains(Surface.popover) ? .menuBar : .mainWindow)
         resultBanner = message
+        bannerPaused = false
+        Self.announce(message)
+        scheduleBannerDismissal()
+    }
+
+    func dismissBanner() {
         bannerTask?.cancel()
+        bannerTask = nil
+        resultBanner = nil
+    }
+
+    /// Hover or focus on the banner stops its countdown.
+    func setBannerPaused(_ paused: Bool) {
+        guard paused != bannerPaused else { return }
+        bannerPaused = paused
+        scheduleBannerDismissal()
+    }
+
+    /// At least 5 s, longer for long messages (about 12 characters per second).
+    nonisolated static func bannerDuration(for message: String) -> TimeInterval {
+        max(5, Double(message.count) / 12)
+    }
+
+    private func scheduleBannerDismissal() {
+        bannerTask?.cancel()
+        bannerTask = nil
+        guard let message = resultBanner, !bannerPaused else { return }
+        let seconds = Self.bannerDuration(for: message)
         bannerTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.resultBanner = nil
         }
+    }
+
+    static func announce(_ text: String) {
+        AccessibilityNotification.Announcement(text).post()
     }
 
     func refresh() {
@@ -282,19 +364,26 @@ final class PortViewModel: ObservableObject {
         configureAutoRefresh()
     }
 
-    /// Call from every surface (popover, main window) when it appears. Scans immediately and
-    /// keeps the refresh timer running while at least one surface is visible.
-    func screenDidAppear() {
-        visibleSurfaceCount += 1
-        refreshLaunchAtLoginStatus()
-        requestPortRefresh()
+    /// Idempotent. Call with the real on-screen state of a surface. Becoming visible scans
+    /// immediately; the refresh timer runs only while at least one surface is visible. A surface
+    /// going away also drops the confirmation request that belongs to it.
+    func setSurface(_ id: String, visible: Bool) {
+        if visible {
+            guard visibleSurfaces.insert(id).inserted else { return }
+            refreshLaunchAtLoginStatus()
+            requestPortRefresh()
+        } else {
+            visibleSurfaces.remove(id)
+            switch id {
+            case Surface.popover: cancelPending(origin: .menuBar)
+            case Surface.mainWindow: cancelPending(origin: .mainWindow)
+            default: break
+            }
+        }
         configureAutoRefresh()
     }
 
-    func screenDidDisappear() {
-        visibleSurfaceCount = max(0, visibleSurfaceCount - 1)
-        configureAutoRefresh()
-    }
+    var isAutoRefreshRunning: Bool { autoRefreshCancellable != nil }
 
     func refreshLaunchAtLoginStatus() {
         launchAtLoginStatus = launchAtLoginService.status
@@ -327,7 +416,6 @@ final class PortViewModel: ObservableObject {
     }
 
     private func requestPortRefresh() {
-        lastRefreshAt = Date()
         refreshGeneration += 1
         let generation = refreshGeneration
 
@@ -359,12 +447,9 @@ final class PortViewModel: ObservableObject {
             }
         hasLoadedLivePorts = true
         scanError = nil
-        if needsPinMigration {
-            needsPinMigration = false
-            if pinStore.migrateTruncatedNames(live: ports) { pinStore.save() }
-        }
+        // Retried on every scan: the pinned process may start long after launch.
+        if pinStore.hasMigrationCandidates, pinStore.migrateTruncatedNames(live: ports) { pinStore.save() }
         reconcileSelection()
-
     }
 
     private func applyScanFailure(_ error: Error, generation: Int) {
@@ -381,7 +466,6 @@ final class PortViewModel: ObservableObject {
             processName: snapshot.processName,
             pid: snapshot.pid,
             port: snapshot.port,
-            protocolName: "TCP",
             user: snapshot.user,
             addresses: snapshot.addresses,
             isReadOnly: snapshot.isReadOnly,
@@ -453,7 +537,7 @@ final class PortViewModel: ObservableObject {
         }
 
         if !messages.isEmpty {
-            showBanner(messages.joined(separator: "\n"))
+            showBanner(messages.joined(separator: "\n"), origin: request.origin)
         }
         if !needForce.isEmpty {
             setPending(kill: nil, force: KillRequest(origin: request.origin, entries: needForce))
@@ -476,7 +560,7 @@ final class PortViewModel: ObservableObject {
     private func configureAutoRefresh() {
         autoRefreshCancellable?.cancel()
         autoRefreshCancellable = nil
-        guard isAutoRefreshEnabled, visibleSurfaceCount > 0 else { return }
+        guard isAutoRefreshEnabled, !visibleSurfaces.isEmpty else { return }
 
         autoRefreshCancellable = Timer.publish(every: refreshIntervalSeconds, on: .main, in: .common)
             .autoconnect()

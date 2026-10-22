@@ -81,26 +81,35 @@ struct PinStore: Equatable {
 
     // MARK: Migration
 
-    /// Upgrades bookmarks saved with a truncated (9 char) lsof name to the full name when a live item
-    /// has the same port and a name that starts with the stored one. Returns true if anything changed.
+    /// True while some bookmark still has a name that could be a truncated lsof name.
+    var hasMigrationCandidates: Bool {
+        bookmarks.contains { $0.processName.count == Self.legacyTruncatedNameLength }
+    }
+
+    /// Upgrades bookmarks saved with a truncated (9 char) lsof name to the full name when the live
+    /// items on the same port offer exactly one longer name that starts with the stored one. An
+    /// ambiguous port (two different longer names) is left alone. Returns true if anything changed.
     @discardableResult
     mutating func migrateTruncatedNames(live: [PortItem]) -> Bool {
         var changed = false
         var result: [PortBookmark] = []
         for bookmark in bookmarks {
             let hasExactLive = live.contains { $0.port == bookmark.port && $0.processName == bookmark.processName }
+            let longerNames = Set(live.compactMap { item -> String? in
+                guard item.port == bookmark.port,
+                      item.processName.count > bookmark.processName.count,
+                      item.processName.hasPrefix(bookmark.processName) else { return nil }
+                return item.processName
+            })
             guard !hasExactLive,
                   bookmark.processName.count == Self.legacyTruncatedNameLength,
-                  let full = live.first(where: {
-                      $0.port == bookmark.port
-                          && $0.processName.count > bookmark.processName.count
-                          && $0.processName.hasPrefix(bookmark.processName)
-                  }) else {
+                  longerNames.count == 1,
+                  let fullName = longerNames.first else {
                 result.append(bookmark)
                 continue
             }
             changed = true
-            let upgraded = PortBookmark(port: bookmark.port, processName: full.processName, user: bookmark.user)
+            let upgraded = PortBookmark(port: bookmark.port, processName: fullName, user: bookmark.user)
             if !result.contains(where: { $0.id == upgraded.id }) && !bookmarks.contains(where: { $0.id == upgraded.id }) {
                 result.append(upgraded)
             }

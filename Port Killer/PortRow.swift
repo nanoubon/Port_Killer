@@ -27,6 +27,23 @@ struct PortRow: Identifiable, Hashable {
         return item.addresses.joined(separator: ", ")
     }
     var isDocker: Bool { KillSafety.isDocker(processName: processName) }
+
+    /// Spoken text for a placeholder dash.
+    static func spoken(_ text: String) -> String { text == "—" ? "ไม่มี" : text }
+
+    /// Full VoiceOver label for a combined row.
+    var accessibilitySummary: String {
+        var parts = ["Port \(port)", processName]
+        if isRunning {
+            parts.append("PID \(pid)")
+            parts.append("ผู้ใช้ \(Self.spoken(userText))")
+        }
+        if isDocker { parts.append("Docker") }
+        if isPinned { parts.append("Pinned") }
+        if isReadOnly { parts.append("อ่านอย่างเดียว") }
+        if !isRunning { parts.append("ไม่ได้รัน") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 extension PortViewModel {
@@ -46,5 +63,16 @@ extension PortViewModel {
             PortRow(id: "pin-\($0.bookmark.id)", item: nil, bookmark: $0.bookmark, isPinned: true)
         }
         return live.filter(\.isPinned) + notRunning + live.filter { !$0.isPinned }
+    }
+}
+
+extension PortViewModel {
+    /// Pin or unpin a row (a not-running placeholder can only be unpinned).
+    func togglePin(_ row: PortRow) {
+        if let item = row.item {
+            togglePinned(item)
+        } else {
+            unpin(row.bookmark)
+        }
     }
 }

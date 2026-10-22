@@ -7,6 +7,13 @@ struct ShellCommandResult: Sendable {
     /// True when the process exceeded the timeout and was terminated. Output is whatever was read so far.
     var timedOut: Bool = false
 
+    nonisolated init(standardOutput: String, standardError: String, exitStatus: Int32, timedOut: Bool = false) {
+        self.standardOutput = standardOutput
+        self.standardError = standardError
+        self.exitStatus = exitStatus
+        self.timedOut = timedOut
+    }
+
     nonisolated var succeeded: Bool {
         exitStatus == 0 && !timedOut
     }
@@ -32,14 +39,14 @@ struct ShellCommandResult: Sendable {
 /// ```
 struct ShellHelper {
 
-    static let defaultTimeout: TimeInterval = 10
+    nonisolated static let defaultTimeout: TimeInterval = 10
     /// Per-stream capture cap (16 MB) so a runaway child cannot exhaust memory.
-    static let maxCapturedBytes = 16 * 1024 * 1024
+    nonisolated static let maxCapturedBytes = 16 * 1024 * 1024
 
     /// Thread-safe byte accumulator for one pipe.
     private final class PipeBuffer: @unchecked Sendable {
-        private let lock = NSLock()
-        private var data = Data()
+        private nonisolated let lock = NSLock()
+        private nonisolated(unsafe) var data = Data()
         nonisolated init() {}
         /// Keeps at most `ShellHelper.maxCapturedBytes`; extra bytes are drained and dropped.
         nonisolated func append(_ chunk: Data) {

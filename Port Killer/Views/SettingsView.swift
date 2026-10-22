@@ -61,11 +61,8 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear {
-            AppActivation.windowDidAppear()
-            viewModel.refreshLaunchAtLoginStatus()
-        }
-        .onDisappear { AppActivation.windowDidDisappear() }
+        .background(WindowAccessor { window in AppActivation.register(window) })
+        .onAppear { viewModel.refreshLaunchAtLoginStatus() }
         // Coming back from System Settings › Login Items: re-read the real status.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             viewModel.refreshLaunchAtLoginStatus()

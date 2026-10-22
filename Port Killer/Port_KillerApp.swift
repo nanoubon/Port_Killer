@@ -9,7 +9,7 @@ import SwiftUI
 
 /// SceneBuilder has no `if #available`, so the macOS 15+ launch behavior (`.suppressed`, the main
 /// window must never open by itself at launch or login) needs a separate App type; the entry point
-/// picks one at runtime. macOS 14 has no such API, so there MainWindowView closes the launch-time
+/// picks one at runtime. macOS 14 has no such API, so there AppActivation closes the launch-time
 /// window itself.
 @main
 enum PortKillerLauncher {
@@ -79,8 +79,33 @@ struct SharedScenes: Scene {
     }
 }
 
+/// What the main window exposes to the Ports menu. Published with `focusedSceneValue`, so it is
+/// nil (and the commands are disabled) whenever the main window is not the focused window.
+struct PortCommandContext {
+    let selectedRows: [PortRow]
+    /// Main window visible, has a killable selection, and focus is not in the search field.
+    let canKill: Bool
+}
+
+private struct PortCommandContextKey: FocusedValueKey {
+    typealias Value = PortCommandContext
+}
+
+extension FocusedValues {
+    var portCommandContext: PortCommandContext? {
+        get { self[PortCommandContextKey.self] }
+        set { self[PortCommandContextKey.self] = newValue }
+    }
+}
+
 struct PortCommands: Commands {
     @ObservedObject var viewModel: PortViewModel
+    @FocusedValue(\.portCommandContext) private var context
+
+    private var singleRow: PortRow? {
+        guard let rows = context?.selectedRows, rows.count == 1 else { return nil }
+        return rows.first
+    }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {}
@@ -89,7 +114,21 @@ struct PortCommands: Commands {
                 .keyboardShortcut("r")
             Button("Kill ที่เลือก") { viewModel.killSelectedPorts(origin: .mainWindow) }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(viewModel.selectedPorts.isEmpty)
+                .disabled(!(context?.canKill ?? false))
+            Divider()
+            Button(singleRow?.isPinned == true ? "Unpin" : "Pin") {
+                if let row = singleRow { viewModel.togglePin(row) }
+            }
+            .disabled(singleRow == nil)
+            Button("Copy PID") {
+                let rows = (context?.selectedRows ?? []).filter(\.isRunning)
+                PortActionsMenu.copy(rows.map(\.pid), label: "PID", viewModel, origin: .mainWindow)
+            }
+            .disabled(!(context?.selectedRows.contains(where: \.isRunning) ?? false))
+            Button("Copy port") {
+                PortActionsMenu.copy((context?.selectedRows ?? []).map(\.port), label: "port", viewModel, origin: .mainWindow)
+            }
+            .disabled(context?.selectedRows.isEmpty ?? true)
         }
     }
 }

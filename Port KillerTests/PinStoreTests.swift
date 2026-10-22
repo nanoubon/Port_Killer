@@ -3,7 +3,7 @@ import XCTest
 
 final class PinStoreTests: XCTestCase {
     private func item(_ name: String, port: String, pid: String = "100") -> PortItem {
-        PortItem(processName: name, pid: pid, port: port, protocolName: "TCP", user: "alice")
+        PortItem(processName: name, pid: pid, port: port, user: "alice")
     }
 
     private func store(_ pairs: (String, String)...) -> PinStore {

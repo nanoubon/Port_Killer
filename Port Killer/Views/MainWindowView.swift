@@ -4,6 +4,8 @@ import SwiftUI
 struct MainWindowView: View {
     @EnvironmentObject private var viewModel: PortViewModel
     @State private var sortOrder = [KeyPathComparator(\PortRow.portNumber)]
+    /// True while the toolbar search field is being edited (⌘⌫ must then delete text, not kill).
+    @State private var isEditingText = false
 
     private var rows: [PortRow] {
         let sorted = viewModel.rows(matching: viewModel.searchText).sorted(using: sortOrder)
@@ -13,6 +15,11 @@ struct MainWindowView: View {
 
     var body: some View {
         let rows = rows
+        let selectedRows = rows.filter { viewModel.selectedPortIDs.contains($0.id) }
+        let canKill = viewModel.visibleSurfaces.contains(PortViewModel.Surface.mainWindow)
+            && !viewModel.selectedPorts.isEmpty
+            && !isEditingText
+            && !viewModel.isPending(for: .mainWindow)
         content(rows)
             .frame(minWidth: 640, minHeight: 320)
             .navigationTitle("Port Killer")
@@ -34,23 +41,17 @@ struct MainWindowView: View {
                         Label("Kill ที่เลือก (\(viewModel.selectedPorts.count))", systemImage: "xmark.circle")
                             .labelStyle(.titleAndIcon)
                     }
-                    .disabled(viewModel.selectedPorts.isEmpty)
+                    .disabled(viewModel.selectedPorts.isEmpty || viewModel.isPending(for: .mainWindow))
                     .help("ปิด process ที่เลือก (ต้องยืนยันก่อน)")
                 }
             }
             .killConfirmation(origin: .mainWindow)
-            .background(WindowAccessor { window in
-                // macOS 14 fallback: SwiftUI opens a Window scene at launch; close it unless requested.
-                if #unavailable(macOS 15), !AppActivation.mainWindowRequested { window.close() }
+            .focusedSceneValue(\.portCommandContext, PortCommandContext(selectedRows: selectedRows, canKill: canKill))
+            .background(WindowAccessor { window in AppActivation.registerMainWindow(window) })
+            .background(WindowVisibilityReader(requireKey: false) { visible in
+                viewModel.setSurface(PortViewModel.Surface.mainWindow, visible: visible)
             })
-            .onAppear {
-                if #available(macOS 15, *) { AppActivation.windowDidAppear(); viewModel.screenDidAppear() }
-                else if AppActivation.mainWindowRequested { AppActivation.windowDidAppear(); viewModel.screenDidAppear() }
-            }
-            .onDisappear {
-                if #available(macOS 15, *) { AppActivation.windowDidDisappear(); viewModel.screenDidDisappear() }
-                else if AppActivation.mainWindowRequested { AppActivation.windowDidDisappear(); viewModel.screenDidDisappear() }
-            }
+            .background(FieldEditingObserver { isEditingText = $0 })
     }
 
     @ViewBuilder
@@ -89,12 +90,14 @@ struct MainWindowView: View {
                         Image(systemName: "pin.fill")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel("Pinned")
                     }
                     Text(row.port)
                         .font(.system(.body, design: .monospaced))
                 }
-                .opacity(row.isRunning ? 1 : 0.5)
+                .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(row.isPinned ? "Port \(row.port), Pinned" : "Port \(row.port)")
+                .portRowAccessibilityActions(row, origin: .mainWindow)
             }
             .width(min: 80, ideal: 90)
 
@@ -104,20 +107,23 @@ struct MainWindowView: View {
                     if row.isDocker { TagLabel("Docker") }
                     if !row.isRunning { TagLabel("ไม่ได้รัน") }
                 }
-                .opacity(row.isRunning ? 1 : 0.5)
+                .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
             }
             .width(min: 140, ideal: 200)
 
             TableColumn("PID", value: \.pidNumber) { row in
                 Text(row.pid)
                     .font(.system(.body, design: .monospaced))
-                    .opacity(row.isRunning ? 1 : 0.5)
+                    .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
+                    .accessibilityLabel(PortRow.spoken(row.pid))
             }
             .width(min: 60, ideal: 80)
 
             TableColumn("User", value: \.userText) { row in
                 HStack(spacing: 4) {
-                    Text(row.userText).lineLimit(1)
+                    Text(row.userText)
+                        .lineLimit(1)
+                        .accessibilityLabel(PortRow.spoken(row.userText))
                     if row.isReadOnly {
                         Image(systemName: "lock.fill")
                             .font(.caption)
@@ -126,14 +132,16 @@ struct MainWindowView: View {
                             .accessibilityLabel("อ่านอย่างเดียว")
                     }
                 }
-                .opacity(row.isRunning ? 1 : 0.5)
+                .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
             }
             .width(min: 80, ideal: 110)
 
             TableColumn("Address", value: \.addressText) { row in
                 Text(row.addressText)
                     .lineLimit(1)
-                    .opacity(row.isRunning ? 1 : 0.5)
+                    .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
+                    .help(row.addressText)
+                    .accessibilityLabel(PortRow.spoken(row.addressText))
             }
         }
         .contextMenu(forSelectionType: PortRow.ID.self) { ids in

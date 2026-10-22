@@ -5,7 +5,7 @@ final class KillSafetyTests: XCTestCase {
     private let me: UInt32 = 501
 
     private func item(name: String = "node", pid: String = "4242", port: String = "3000", user: String? = "alice") -> PortItem {
-        PortItem(processName: name, pid: pid, port: port, protocolName: "TCP", user: user)
+        PortItem(processName: name, pid: pid, port: port, user: user)
     }
 
     private func ident(uid: UInt32 = 501, path: String? = "/usr/local/bin/node") -> ProcessIdentity {

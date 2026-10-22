@@ -1,4 +1,3 @@
-import AppKit
 import Darwin
 import Foundation
 import ServiceManagement
@@ -67,20 +66,17 @@ actor PortScanService {
             throw ScanError.unavailable
         }
         try Task.checkCancellation()
+        return try Self.interpretLsof(result)
+    }
 
-        if result.timedOut {
-            throw ScanError.timedOut
-        }
+    /// Maps an lsof run to rows or an error. Exit 1 with empty stdout means "no listeners" even if
+    /// lsof wrote warnings to stderr; exit 1 with output keeps the output; other failures surface stderr.
+    nonisolated static func interpretLsof(_ result: ShellCommandResult) throws -> [PortScanSnapshot] {
+        if result.timedOut { throw ScanError.timedOut }
 
         let stdoutEmpty = result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let stderrEmpty = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if result.exitStatus == 1, stdoutEmpty { return [] }
 
-        // lsof exits 1 with no output when nothing matches: that is "no listeners", not a failure.
-        if result.exitStatus == 1, stdoutEmpty, stderrEmpty {
-            return []
-        }
-
-        // lsof also exits 1 when it printed results but warned about some items; keep the results.
         guard result.succeeded || (result.exitStatus == 1 && !stdoutEmpty) else {
             let fallback = "lsof exited with status \(result.exitStatus)."
             let message = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)

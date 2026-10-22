@@ -6,6 +6,7 @@ struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
 
     private static let rowHeight: CGFloat = 48
     private static let maxListHeight: CGFloat = 384
@@ -22,8 +23,10 @@ struct MenuBarPopoverView: View {
         }
         .frame(width: 340)
         .killConfirmation(origin: .menuBar)
-        .onAppear { viewModel.screenDidAppear() }
-        .onDisappear { viewModel.screenDidDisappear() }
+        // Real window state: MenuBarExtra(.window) content does not get onAppear/onDisappear per open.
+        .background(WindowVisibilityReader(requireKey: true) { visible in
+            viewModel.setSurface(PortViewModel.Surface.popover, visible: visible)
+        })
     }
 
     private var header: some View {
@@ -32,12 +35,18 @@ struct MenuBarPopoverView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("ค้นหา port, process, PID", text: $searchText)
                     .textFieldStyle(.plain)
+                    .focused($searchFocused)
                     .accessibilityLabel("Search ports")
                 if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
+                    Button {
+                        searchText = ""
+                        searchFocused = true
+                    } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .frame(minWidth: 24, minHeight: 24)
+                    .contentShape(Rectangle())
                     .accessibilityLabel("Clear search")
                     .help("ล้างคำค้นหา")
                 }
@@ -50,6 +59,8 @@ struct MenuBarPopoverView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 24, minHeight: 24)
+            .contentShape(Rectangle())
             .accessibilityLabel("Refresh ports")
             .help("สแกน port ใหม่")
         }
@@ -156,19 +167,24 @@ private struct MenuPortRow: View {
             trailing
         }
         .padding(.horizontal, 10)
-        .opacity(row.isRunning ? 1 : 0.55)
+        .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
         .contentShape(Rectangle())
         .contextMenu { PortActionsMenu(rows: [row], origin: .menuBar) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(row.accessibilitySummary)
+        .portRowAccessibilityActions(row, origin: .menuBar)
     }
 
     @ViewBuilder
     private var trailing: some View {
         if let item = row.item, row.isReadOnly {
             if let owner = row.ownerLabel { TagLabel(owner) }
-            Button { viewModel.copySudoKillCommand(for: item) } label: {
+            Button { viewModel.copySudoKillCommand(for: item, origin: .menuBar) } label: {
                 Image(systemName: "doc.on.doc")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 24, minHeight: 24)
+            .contentShape(Rectangle())
             .accessibilityLabel("คัดลอกคำสั่ง sudo kill \(item.pid)")
             .help("คัดลอกคำสั่ง sudo kill \(item.pid)")
         } else if let item = row.item {
@@ -179,6 +195,8 @@ private struct MenuPortRow: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 24, minHeight: 24)
+            .contentShape(Rectangle())
             .accessibilityLabel("Kill \(row.processName) on port \(row.port)")
             .help("ปิด \(row.processName) (port \(row.port))")
         } else {
@@ -186,6 +204,8 @@ private struct MenuPortRow: View {
                 Image(systemName: "pin.slash")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 24, minHeight: 24)
+            .contentShape(Rectangle())
             .accessibilityLabel("Unpin \(row.processName) port \(row.port)")
             .help("ยกเลิก pin")
         }
