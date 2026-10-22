@@ -9,6 +9,7 @@ struct ContentView: View {
 
     var body: some View {
         WorkspaceShellView()
+            .killConfirmation(origin: .mainWindow)
             .preferredColorScheme(.dark)
     }
 }
@@ -642,7 +643,7 @@ struct PortDetailPanel: View {
                         .buttonStyle(DangerActionButtonStyle())
                     }
 
-                    Text("Process will be force-terminated immediately")
+                    Text("You will be asked to confirm before the process is closed")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color.pkDangerText.opacity(0.55))
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -829,8 +830,7 @@ struct PinnedPortCard: View {
                     .buttonStyle(SecondaryActionButtonStyle())
 
                     Button {
-                        viewModel.setSection(.activePorts)
-                        viewModel.selectPort(port)
+                        viewModel.killProcess(pid: port.pid, port: port)
                     } label: {
                         Text("Kill")
                             .frame(maxWidth: .infinity)
@@ -1288,14 +1288,6 @@ struct MenuBarPopoverView: View {
 
                 VStack(spacing: 10) {
                     Button {
-                        viewModel.killBusyPorts(matching: searchText)
-                    } label: {
-                        Text("Kill All High Usage")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PrimaryActionButtonStyle())
-
-                    Button {
                         openMainWindow()
                     } label: {
                         Text("Open Full App")
@@ -1312,6 +1304,7 @@ struct MenuBarPopoverView: View {
         .scrollIndicators(.visible)
         .frame(width: 320, height: 560)
         .background(Color.pkSidebar)
+        .killConfirmation(origin: .menuBar)
     }
 
     private func openMainWindow(section: AppSection = .activePorts) {
@@ -1354,7 +1347,7 @@ struct MenuPortRowView: View {
                 )
 
             Button {
-                viewModel.killProcess(pid: port.pid, port: port)
+                viewModel.killProcess(pid: port.pid, port: port, origin: .menuBar)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
@@ -1366,6 +1359,8 @@ struct MenuPortRowView: View {
                     )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("ปิด \(port.processName) port \(port.port)")
+            .help("ปิด process")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)

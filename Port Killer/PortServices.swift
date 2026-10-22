@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import ServiceManagement
 
@@ -7,12 +8,6 @@ struct PortScanSnapshot: Sendable, Hashable {
     let pid: String
     let user: String
     let port: String
-}
-
-struct KillCommandOutcome: Sendable {
-    let pid: String
-    let succeeded: Bool
-    let message: String
 }
 
 actor PortScanService {
@@ -87,19 +82,74 @@ actor PortScanService {
     }
 }
 
+enum KillSignalOutcome: Sendable, Equatable {
+    case terminated
+    case stillRunning
+    case notPermitted
+    case alreadyGone
+    case failed(Int32)
+}
+
+/// Read-only process lookups through libproc. No shell involved.
+enum ProcessInspector {
+    nonisolated static func name(of pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: 256)
+        let length = proc_name(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return String(cString: buffer)
+    }
+
+    nonisolated static func executablePath(of pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return String(cString: buffer)
+    }
+}
+
 actor ProcessKillerService {
-    func kill(pid: String) async -> KillCommandOutcome {
-        guard let result = ShellHelper.executeCommand(command: "/bin/kill", arguments: ["-9", pid]) else {
-            return KillCommandOutcome(pid: pid, succeeded: false, message: "Kill command could not be executed.")
-        }
+    private static let gracePeriodNanoseconds: UInt64 = 3_000_000_000
+    private static let pollNanoseconds: UInt64 = 100_000_000
 
-        guard result.succeeded else {
-            let stderr = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
-            let fallback = "Kill command exited with status \(result.exitStatus)."
-            return KillCommandOutcome(pid: pid, succeeded: false, message: stderr.isEmpty ? fallback : stderr)
-        }
+    /// Sends SIGTERM and polls up to ~3s for the process to exit.
+    func terminate(pid: Int32) async -> KillSignalOutcome {
+        if let early = Self.send(SIGTERM, to: pid) { return early }
 
-        return KillCommandOutcome(pid: pid, succeeded: true, message: "Process terminated.")
+        var waited: UInt64 = 0
+        while waited < Self.gracePeriodNanoseconds {
+            try? await Task.sleep(nanoseconds: Self.pollNanoseconds)
+            waited += Self.pollNanoseconds
+            if !Self.exists(pid) { return .terminated }
+        }
+        return Self.exists(pid) ? .stillRunning : .terminated
+    }
+
+    func forceKill(pid: Int32) async -> KillSignalOutcome {
+        if let early = Self.send(SIGKILL, to: pid) { return early }
+
+        var waited: UInt64 = 0
+        while waited < 2_000_000_000 {
+            try? await Task.sleep(nanoseconds: Self.pollNanoseconds)
+            waited += Self.pollNanoseconds
+            if !Self.exists(pid) { return .terminated }
+        }
+        return Self.exists(pid) ? .stillRunning : .terminated
+    }
+
+    /// Returns a final outcome if the signal could not be delivered, nil if it was sent.
+    private nonisolated static func send(_ signal: Int32, to pid: Int32) -> KillSignalOutcome? {
+        guard pid > 1 else { return .notPermitted }
+        if Darwin.kill(pid, signal) == 0 { return nil }
+        switch errno {
+        case ESRCH: return .alreadyGone
+        case EPERM: return .notPermitted
+        default: return .failed(errno)
+        }
+    }
+
+    private nonisolated static func exists(_ pid: Int32) -> Bool {
+        if Darwin.kill(pid, 0) == 0 { return true }
+        return errno != ESRCH
     }
 }
 

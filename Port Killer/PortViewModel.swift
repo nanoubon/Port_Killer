@@ -19,6 +19,9 @@ final class PortViewModel: ObservableObject {
     @Published var debugMessage: String = "Initializing..."
     @Published var lastRefreshAt: Date?
     @Published var hasLoadedLivePorts: Bool = false
+    @Published var pendingKill: KillRequest?
+    @Published var pendingForceKill: KillRequest?
+    @Published var resultBanner: String?
 
     private let portScanService = PortScanService()
     private let processKillerService = ProcessKillerService()
@@ -28,6 +31,7 @@ final class PortViewModel: ObservableObject {
     private var activeRefreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
     private var killInFlightPIDs = Set<String>()
+    private var bannerTask: Task<Void, Never>?
 
     /// Keys written by earlier builds for features that no longer exist.
     private static let legacyStorageKeys = [
@@ -208,55 +212,94 @@ final class PortViewModel: ObservableObject {
         PortBookmark(portItem: port)
     }
 
-    func killProcess(pid: String, port: PortItem? = nil) {
-        let snapshot = port ?? ports.first { $0.pid == pid }
-        guard let snapshot else {
-            debugMessage = "Could not find the selected process."
+    /// Only creates a pending request. The UI must confirm before any signal is sent.
+    func killProcess(pid: String, port: PortItem? = nil, origin: KillOrigin = .mainWindow) {
+        let candidate = port ?? ports.first { $0.pid == pid }
+        guard let candidate else {
+            showBanner("ไม่พบ process ที่เลือก")
             return
         }
-
-        Task { [weak self] in
-            await self?.killPorts([snapshot], refreshAfterCompletion: true)
-        }
+        requestKill([candidate], origin: origin)
     }
 
-    func killSelectedPorts() {
+    func killSelectedPorts(origin: KillOrigin = .mainWindow) {
         let items = selectedPorts
         guard !items.isEmpty else {
-            debugMessage = "Select at least one process to terminate."
+            showBanner("เลือกอย่างน้อยหนึ่งรายการก่อน")
+            return
+        }
+        requestKill(items, origin: origin)
+    }
+
+    private func requestKill(_ candidates: [PortItem], origin: KillOrigin) {
+        guard hasLoadedLivePorts else {
+            showBanner("ยังไม่ได้สแกน port")
+            return
+        }
+        // Only items that are in the current scan result can be requested.
+        let live = candidates.compactMap { candidate in ports.first { $0.id == candidate.id } }
+        guard !live.isEmpty else {
+            showBanner("process นี้ไม่อยู่ในรายการแล้ว")
             return
         }
 
-        clearSelection()
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let user = NSUserName()
+        var entries: [KillRequest.Entry] = []
+        var refusedSelf = false
+        for item in live {
+            let warnings = KillSafety.classify(
+                item,
+                currentUser: user,
+                ownPID: ownPID,
+                executablePath: ProcessInspector.executablePath(of:)
+            )
+            if warnings.contains(where: \.isBlocking) {
+                refusedSelf = true
+                continue
+            }
+            let fullName = Int32(item.pid).flatMap(ProcessInspector.name(of:)) ?? item.processName
+            entries.append(KillRequest.Entry(item: item, displayName: fullName, warnings: warnings))
+        }
 
+        if refusedSelf {
+            showBanner("ไม่สามารถปิด Port Killer เองได้")
+        }
+        guard !entries.isEmpty else { return }
+        pendingKill = KillRequest(origin: origin, entries: entries)
+    }
+
+    func cancelPendingKill() {
+        pendingKill = nil
+    }
+
+    func cancelForceKill() {
+        pendingForceKill = nil
+    }
+
+    func confirmKill() {
+        guard let request = pendingKill else { return }
+        pendingKill = nil
         Task { [weak self] in
-            await self?.killPorts(items, refreshAfterCompletion: true)
+            await self?.execute(request, force: false)
         }
     }
 
-    func killBusyPorts(matching query: String = "") {
-        guard hasLoadedLivePorts else {
-            debugMessage = "No live ports are loaded yet."
-            return
-        }
-
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let items = ports.filter { port in
-            guard port.state == .busy else { return false }
-            guard !trimmedQuery.isEmpty else { return true }
-            return port.processName.localizedCaseInsensitiveContains(trimmedQuery) ||
-                port.port.localizedCaseInsensitiveContains(trimmedQuery) ||
-                port.pid.localizedCaseInsensitiveContains(trimmedQuery) ||
-                (port.user?.localizedCaseInsensitiveContains(trimmedQuery) ?? false)
-        }
-
-        guard !items.isEmpty else {
-            debugMessage = "No high-usage processes matched the current filter."
-            return
-        }
-
+    func confirmForceKill() {
+        guard let request = pendingForceKill else { return }
+        pendingForceKill = nil
         Task { [weak self] in
-            await self?.killPorts(items, refreshAfterCompletion: true)
+            await self?.execute(request, force: true)
+        }
+    }
+
+    func showBanner(_ message: String) {
+        resultBanner = message
+        bannerTask?.cancel()
+        bannerTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.resultBanner = nil
         }
     }
 
@@ -398,48 +441,72 @@ final class PortViewModel: ObservableObject {
         )
     }
 
-    private func killPorts(_ items: [PortItem], refreshAfterCompletion: Bool) async {
-        guard !items.isEmpty else { return }
-
-        var processedItems: [PortItem] = []
-
-        for item in items {
-            guard killInFlightPIDs.insert(item.pid).inserted else { continue }
-
-            let outcome = await processKillerService.kill(pid: item.pid)
-            killInFlightPIDs.remove(item.pid)
-
-            appendKillHistory(for: item, outcome: outcome)
-            processedItems.append(item)
-        }
-
-        guard !processedItems.isEmpty else {
-            debugMessage = "Those processes are already being terminated."
+    /// Re-validates every item right before signalling, then reports per-item results.
+    private func execute(_ request: KillRequest, force: Bool) async {
+        // Fresh scan so we can confirm the pid+port pair still listens.
+        let listening: Set<String>
+        do {
+            let snapshots = try await portScanService.scanListeningPorts()
+            listening = Set(snapshots.map { "\($0.pid)-\($0.port)" })
+        } catch {
+            showBanner("ตรวจสอบ process ก่อนปิดไม่สำเร็จ จึงไม่ได้ปิดอะไร")
             return
         }
 
-        if refreshAfterCompletion {
-            requestPortRefresh()
+        var messages: [String] = []
+        var needForce: [KillRequest.Entry] = []
+
+        for entry in request.entries {
+            let item = entry.item
+            let label = "\(entry.displayName) (\(item.port))"
+
+            let valid = KillSafety.revalidate(
+                item,
+                currentProcessName: ProcessInspector.name(of:),
+                stillListeningOnPort: { pid, port in listening.contains("\(pid)-\(port)") }
+            )
+            guard valid, let pid = Int32(item.pid) else {
+                messages.append("ข้าม \(label): process เปลี่ยนไปหรือปิดไปแล้ว")
+                continue
+            }
+            guard pid != ProcessInfo.processInfo.processIdentifier else {
+                messages.append("ไม่สามารถปิด Port Killer เองได้")
+                continue
+            }
+            guard killInFlightPIDs.insert(item.pid).inserted else { continue }
+            defer { killInFlightPIDs.remove(item.pid) }
+
+            let outcome = force
+                ? await processKillerService.forceKill(pid: pid)
+                : await processKillerService.terminate(pid: pid)
+
+            switch outcome {
+            case .terminated:
+                messages.append("ปิด \(label) แล้ว")
+            case .stillRunning:
+                if force {
+                    messages.append("\(label) ยังไม่ปิดแม้ส่ง SIGKILL")
+                } else {
+                    messages.append("\(label) ยังไม่ปิดหลังรอ 3 วินาที")
+                    needForce.append(entry)
+                }
+            case .notPermitted:
+                messages.append("ไม่มีสิทธิ์ปิด process ของ \(item.user ?? "user อื่น")")
+            case .alreadyGone:
+                messages.append("process ปิดไปก่อนแล้ว (\(label))")
+            case .failed(let code):
+                messages.append("ปิด \(label) ไม่สำเร็จ (errno \(code))")
+            }
+            selectedPortIDs.remove(item.id)
         }
-    }
 
-    private func appendKillHistory(for port: PortItem, outcome: KillCommandOutcome) {
-        killHistory.insert(
-            KillHistoryEntry(
-                port: port.port,
-                processName: port.processName,
-                pid: port.pid,
-                outcome: outcome.message
-            ),
-            at: 0
-        )
-
-        selectedPortIDs.remove(port.id)
-        if selectedPortID == port.id {
-            selectedPortID = nil
+        if !messages.isEmpty {
+            showBanner(messages.joined(separator: "\n"))
         }
-
-        debugMessage = outcome.message
+        if !needForce.isEmpty {
+            pendingForceKill = KillRequest(origin: request.origin, entries: needForce)
+        }
+        requestPortRefresh()
     }
 
     private func loadPersistedState() {
@@ -515,4 +582,23 @@ struct QuickAction: Identifiable, Hashable {
     let title: String
     let subtitle: String
     let symbol: String
+}
+
+enum KillOrigin: Hashable {
+    case mainWindow
+    case menuBar
+}
+
+struct KillRequest: Identifiable {
+    struct Entry: Identifiable {
+        let item: PortItem
+        /// Full name from libproc when available (lsof truncates names).
+        let displayName: String
+        let warnings: [KillWarning]
+        var id: String { item.id }
+    }
+
+    let id = UUID()
+    let origin: KillOrigin
+    let entries: [Entry]
 }

@@ -1,0 +1,121 @@
+import SwiftUI
+
+/// Inline confirmation panel + result banner. Implemented as an overlay (not a sheet/alert)
+/// so it also works inside the MenuBarExtra .window popover.
+private struct KillOverlayModifier: ViewModifier {
+    @EnvironmentObject private var viewModel: PortViewModel
+    let origin: KillOrigin
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .bottom) {
+                if let banner = viewModel.resultBanner {
+                    Text(banner)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.pkText)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: 420, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.pkElevated))
+                        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                        .padding(14)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityAddTraits(.isStaticText)
+                }
+            }
+            .overlay {
+                if let request = viewModel.pendingKill, request.origin == origin {
+                    KillConfirmationPanel(
+                        request: request,
+                        title: "ปิด process?",
+                        confirmTitle: "ปิด process",
+                        footnote: "ส่ง SIGTERM ก่อน รอสูงสุดประมาณ 3 วินาที",
+                        onCancel: { viewModel.cancelPendingKill() },
+                        onConfirm: { viewModel.confirmKill() }
+                    )
+                } else if let request = viewModel.pendingForceKill, request.origin == origin {
+                    KillConfirmationPanel(
+                        request: request,
+                        title: "บังคับปิด (SIGKILL)?",
+                        confirmTitle: "บังคับปิด",
+                        footnote: "process เหล่านี้ยังไม่ปิดหลังรอ 3 วินาที SIGKILL จะหยุดทันทีโดยไม่ให้บันทึกข้อมูล",
+                        onCancel: { viewModel.cancelForceKill() },
+                        onConfirm: { viewModel.confirmForceKill() }
+                    )
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: viewModel.resultBanner)
+    }
+}
+
+extension View {
+    func killConfirmation(origin: KillOrigin) -> some View {
+        modifier(KillOverlayModifier(origin: origin))
+    }
+}
+
+struct KillConfirmationPanel: View {
+    let request: KillRequest
+    let title: String
+    let confirmTitle: String
+    let footnote: String
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture { }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.pkText)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(request.entries) { entry in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.displayName)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color.pkText)
+                                Text("Port \(entry.item.port) · PID \(entry.item.pid)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.pkMuted)
+                                ForEach(entry.warnings, id: \.self) { warning in
+                                    Text(warning.message)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.yellow)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+
+                Text(footnote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.pkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Spacer()
+                    Button("ยกเลิก", action: onCancel)
+                        .keyboardShortcut(.cancelAction)
+                    Button(confirmTitle, action: onConfirm)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: 360)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.pkSidebar))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.pkStroke.opacity(0.5), lineWidth: 1))
+            .padding(16)
+        }
+    }
+}
