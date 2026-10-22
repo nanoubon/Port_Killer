@@ -342,20 +342,16 @@ struct ActivePortsDashboardView: View {
 
                 Spacer()
 
-                Text("\(viewModel.visiblePorts.count) ACTIVE")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .foregroundStyle(Color.pkSuccess)
-                    .background(
-                        RoundedRectangle(cornerRadius: 999, style: .continuous)
-                            .fill(Color.pkSuccess.opacity(0.12))
-                    )
-            }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 4), spacing: 14) {
-                ForEach(viewModel.dashboardMetrics) { metric in
-                    MetricCardView(metric: metric)
+                if viewModel.hasLoadedLivePorts {
+                    Text("\(viewModel.visiblePorts.count) ACTIVE")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(Color.pkSuccess)
+                        .background(
+                            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                .fill(Color.pkSuccess.opacity(0.12))
+                        )
                 }
             }
 
@@ -366,7 +362,9 @@ struct ActivePortsDashboardView: View {
 
                         ScrollView {
                             LazyVStack(spacing: 0) {
-                                if viewModel.visiblePorts.isEmpty {
+                                if !viewModel.hasLoadedLivePorts {
+                                    LoadingTablePlaceholder()
+                                } else if viewModel.visiblePorts.isEmpty {
                                     EmptyTablePlaceholder()
                                 } else {
                                     ForEach(viewModel.visiblePorts) { port in
@@ -386,14 +384,6 @@ struct ActivePortsDashboardView: View {
             }
 
             HStack(alignment: .top, spacing: 18) {
-                CardShell(fill: Color.pkCard, radius: 18) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        SectionHeading(title: "PORT ACTIVITY MAP", trailing: "REAL-TIME TELEMETRY")
-                        HeatmapStripView(states: viewModel.activityHeatmapState)
-                            .frame(height: 240)
-                    }
-                }
-
                 CardShell(fill: Color.pkCard, radius: 18) {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionHeading(title: "QUICK COMMANDS", trailing: "LIVE SUGGESTIONS")
@@ -500,7 +490,7 @@ struct PortTableRowView: View {
                 .foregroundStyle(Color.pkText.opacity(0.82))
                 .frame(minWidth: 60, idealWidth: 72, alignment: .leading)
 
-            Text(port.user ?? "admin")
+            Text(port.user ?? "-")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(Color.pkMuted)
                 .frame(minWidth: 70, idealWidth: 88, alignment: .leading)
@@ -508,7 +498,7 @@ struct PortTableRowView: View {
             StatusPill(state: port.state)
                 .frame(minWidth: 70, idealWidth: 84, alignment: .leading)
 
-            Text(port.command ?? "/usr/local/bin/\(port.processName.lowercased())")
+            Text(port.command ?? "-")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(Color.pkMuted.opacity(0.75))
                 .lineLimit(1)
@@ -544,6 +534,20 @@ struct PortTableRowView: View {
     }
 }
 
+struct LoadingTablePlaceholder: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Scanning listening ports...")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.pkText)
+        }
+        .frame(maxWidth: .infinity, minHeight: 180)
+        .padding(28)
+    }
+}
+
 struct EmptyTablePlaceholder: View {
     @EnvironmentObject private var viewModel: PortViewModel
 
@@ -571,30 +575,7 @@ struct PortDetailPanel: View {
     @EnvironmentObject private var viewModel: PortViewModel
 
     var port: PortItem? {
-        if let selected = viewModel.selectedPort {
-            return selected
-        }
-
-        if !viewModel.hasLoadedLivePorts {
-            return viewModel.demoPort(for: "3000") ?? demoFallback
-        }
-
-        return viewModel.visiblePorts.first ?? viewModel.ports.first
-    }
-
-    private var demoFallback: PortItem {
-        PortItem(
-            processName: "Node.js Runtime",
-            pid: "451",
-            port: "3000",
-            protocolName: "TCP",
-            icon: NSImage.symbol("terminal.fill"),
-            state: .listening,
-            user: "admin",
-            command: "node server.js --config ./webpack.prod.js --inspect=9229",
-            uptime: "Active since 2h 45m",
-            loadDescription: "0.4% CPU"
-        )
+        viewModel.selectedPort
     }
 
     var body: some View {
@@ -733,7 +714,7 @@ struct FavoritesSectionView: View {
     @EnvironmentObject private var viewModel: PortViewModel
 
     private var pinnedItems: [PortItem] {
-        viewModel.pinnedPortItems.isEmpty ? Array(viewModel.visiblePorts.prefix(4)) : viewModel.pinnedPortItems
+        viewModel.pinnedPortItems
     }
 
     var body: some View {
@@ -760,7 +741,7 @@ struct FavoritesSectionView: View {
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
                 MetricCardView(metric: DashboardMetric(title: "TOTAL PINNED", value: String(format: "%02d", pinnedItems.count), tint: .neutral, detail: "Saved across launches"))
-                MetricCardView(metric: DashboardMetric(title: "ACTIVE SERVICES", value: String(format: "%02d", max(pinnedItems.filter { $0.state == .listening }.count, 3)), tint: .secondary, detail: "Listening now"))
+                MetricCardView(metric: DashboardMetric(title: "ACTIVE SERVICES", value: String(format: "%02d", pinnedItems.filter { $0.state == .listening }.count), tint: .secondary, detail: "Listening now"))
                 QuickActionCard(action: QuickAction(title: "Pin New Port", subtitle: "Attach a new environment", symbol: "plus.circle.fill")) {
                     if let first = viewModel.visiblePorts.first {
                         viewModel.togglePinned(first)
@@ -775,17 +756,6 @@ struct FavoritesSectionView: View {
                 ForEach(Array(pinnedItems.enumerated()), id: \.element.id) { index, port in
                     PinnedPortCard(port: port, isMuted: index % 3 == 2)
                         .environmentObject(viewModel)
-                }
-            }
-
-            CardShell(fill: Color.pkCard, radius: 18) {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeading(title: "RESOURCE HEATMAP", trailing: "VIEW ANALYTICS")
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(pinnedItems.prefix(4).enumerated()), id: \.offset) { index, port in
-                            HeatmapLineView(label: "Port \(port.port)", state: port.state, emphasis: index == 1 ? .warning : .secondary)
-                        }
-                    }
                 }
             }
 
@@ -844,7 +814,7 @@ struct PinnedPortCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PID: \(port.pid)")
-                    Text("Up: \(port.uptime ?? "2h 45m")")
+                    Text("Up: \(port.uptime ?? "-")")
                 }
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.pkMuted)
@@ -873,53 +843,6 @@ struct PinnedPortCard: View {
     }
 }
 
-struct HeatmapLineView: View {
-    let label: String
-    let state: PortState
-    let emphasis: HeatmapEmphasis
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(label)
-                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                .foregroundStyle(Color.pkText.opacity(0.82))
-                .frame(width: 90, alignment: .leading)
-
-            HStack(spacing: 4) {
-                ForEach(0..<8, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(barColor(for: index))
-                        .frame(width: 50, height: 8)
-                }
-            }
-
-            Spacer()
-
-            Text(emphasis == .warning ? "High Usage" : (state == .idle ? "Idle" : "Low Load"))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(emphasis == .warning ? Color.pkWarning : Color.pkSecondary)
-        }
-    }
-
-    private func barColor(for index: Int) -> Color {
-        switch state {
-        case .listening:
-            return index < 4 ? Color.pkSecondary : (index == 4 ? Color.pkMuted.opacity(0.35) : Color.pkSurface)
-        case .busy:
-            return index < 6 ? Color.pkWarning : Color.pkDanger.opacity(0.45)
-        case .idle:
-            return index < 3 ? Color.pkMuted.opacity(0.35) : Color.pkSurface
-        case .dormant:
-            return index < 2 ? Color.pkMuted.opacity(0.25) : Color.pkSurface
-        }
-    }
-}
-
-enum HeatmapEmphasis {
-    case secondary
-    case warning
-}
-
 struct HistorySectionView: View {
     @EnvironmentObject private var viewModel: PortViewModel
 
@@ -943,7 +866,7 @@ struct HistorySectionView: View {
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
                 MetricCardView(metric: DashboardMetric(title: "RECENT EVENTS", value: String(format: "%02d", viewModel.historyFeed.count), tint: .warning, detail: "Last terminations logged"))
-                MetricCardView(metric: DashboardMetric(title: "TODAY", value: String(format: "%02d", min(3, viewModel.historyFeed.count)), tint: .secondary, detail: "Processes terminated"))
+                MetricCardView(metric: DashboardMetric(title: "TODAY", value: String(format: "%02d", viewModel.historyFeed.filter { Calendar.current.isDateInToday($0.createdAt) }.count), tint: .secondary, detail: "Processes terminated"))
                 MetricCardView(metric: DashboardMetric(title: "AUDIT", value: "Enabled", tint: .primary, detail: "Persistent local log"))
             }
 
@@ -1110,592 +1033,6 @@ struct SettingsSectionView: View {
             Text("Configure your Port Killer experience")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.pkMuted)
-        }
-    }
-}
-
-struct ProUpsellDashboardView: View {
-    @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2), spacing: 14) {
-                FeatureCard(title: "Real-time Port Monitoring", subtitle: "Instant visual tracking of traffic spikes and socket status.", symbol: "chart.line.uptrend.xyaxis", tint: .primary)
-                FeatureCard(title: "Custom Auto-Kill Scripts", subtitle: "Define rules that automatically terminate noisy ports and repeat offenders.", symbol: "terminal", tint: .secondary)
-                FeatureCard(title: "Kill History", subtitle: "Full audit log of every killed process with local persistence.", symbol: "clock.arrow.circlepath", tint: .warning)
-                FeatureCard(title: "Multi-Environment Sync", subtitle: "Export and import your saved port profile between Macs.", symbol: "airplane", tint: .primary)
-            }
-
-            CardShell(fill: Color.pkCard, radius: 18) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("Choose your Pro plan")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.pkText)
-                        Spacer()
-                        if proStore.isLoadingProducts {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2), spacing: 14) {
-                        ForEach(proStore.sortedProducts, id: \.id) { product in
-                            ProProductCard(product: product)
-                        }
-                    }
-
-                    HStack(spacing: 12) {
-                        Button {
-                            Task { await proStore.restorePurchases() }
-                        } label: {
-                            Text("Restore Purchases")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(SecondaryActionButtonStyle())
-
-                        Button {
-                            proStore.openManageSubscriptions()
-                        } label: {
-                            Text("Manage Subscription")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(TertiaryActionButtonStyle())
-                    }
-                }
-            }
-
-            CardShell(fill: Color.pkSurface.opacity(0.78), radius: 16) {
-                HStack(spacing: 18) {
-                    Text("PRO INCLUDES")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.pkMuted)
-                    Spacer()
-                    ForEach(["LIVE MONITORING", "AUTO-KILL", "SYNC"], id: \.self) { label in
-                        Text(label)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.pkMuted.opacity(0.8))
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct ProUnlockedDashboardView: View {
-    @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
-    @Binding var ruleName: String
-    @Binding var rulePort: String
-    @Binding var ruleProcess: String
-    @State private var isExportingProfile = false
-    @State private var isImportingProfile = false
-    @State private var exportDocument = ProProfileDocument(
-        profile: ProProfile(
-            pinnedBookmarks: [],
-            killHistory: [],
-            autoKillRules: [],
-            refreshIntervalSeconds: 8,
-            isAutoRefreshEnabled: true
-        )
-    )
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
-                ForEach(viewModel.proSnapshotMetrics) { metric in
-                    MetricCardView(metric: metric)
-                }
-            }
-
-            HStack(alignment: .top, spacing: 18) {
-                CardShell(fill: Color.pkCard, radius: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SectionHeading(title: "LIVE MONITORING", trailing: "PRO CONTROL")
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text("Auto refresh")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color.pkText)
-                                Spacer()
-                                Toggle("", isOn: Binding(
-                                    get: { viewModel.isAutoRefreshEnabled },
-                                    set: { viewModel.setAutoRefreshEnabled($0) }
-                                ))
-                                .labelsHidden()
-                            }
-
-                            HStack {
-                                Text("Refresh interval")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color.pkText)
-                                Spacer()
-                                Text("\(Int(viewModel.refreshIntervalSeconds)) s")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.pkPrimary)
-                            }
-
-                            Slider(value: Binding(
-                                get: { viewModel.refreshIntervalSeconds },
-                                set: { viewModel.setRefreshIntervalSeconds($0) }
-                            ), in: 3...60, step: 1)
-
-                            HStack(spacing: 10) {
-                                SecondaryActionButton(title: "Refresh Now", symbol: "arrow.clockwise") {
-                                    viewModel.refresh()
-                                }
-
-                                SecondaryActionButton(title: "Open History", symbol: "clock.arrow.circlepath") {
-                                    viewModel.setSection(.history)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                CardShell(fill: Color.pkCard, radius: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SectionHeading(title: "AUTO-KILL RULES", trailing: "BACKGROUND ENFORCEMENT")
-
-                        VStack(spacing: 10) {
-                            TextField("Rule name", text: $ruleName)
-                            TextField("Port contains", text: $rulePort)
-                            TextField("Process contains", text: $ruleProcess)
-                        }
-                        .textFieldStyle(.roundedBorder)
-
-                        Button {
-                            viewModel.addAutoKillRule(name: ruleName, portQuery: rulePort, processQuery: ruleProcess)
-                            ruleName = ""
-                            rulePort = ""
-                            ruleProcess = ""
-                        } label: {
-                            Text("Add Rule")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryActionButtonStyle())
-
-                        VStack(spacing: 10) {
-                            ForEach(viewModel.autoKillRules) { rule in
-                                AutoKillRuleRow(rule: rule)
-                            }
-                        }
-                    }
-                }
-            }
-
-            HStack(alignment: .top, spacing: 18) {
-                CardShell(fill: Color.pkCard, radius: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SectionHeading(title: "PROFILE SYNC", trailing: "EXPORT / IMPORT")
-                        Text("Save your bookmarks, rules, refresh interval, and kill history to move the setup between machines.")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.pkMuted)
-
-                        HStack(spacing: 10) {
-                            SecondaryActionButton(title: "Export Profile", symbol: "square.and.arrow.up") {
-                                exportDocument = ProProfileDocument(profile: viewModel.currentProProfile())
-                                isExportingProfile = true
-                            }
-
-                            SecondaryActionButton(title: "Import Profile", symbol: "square.and.arrow.down") {
-                                isImportingProfile = true
-                            }
-                        }
-
-                        HStack(spacing: 10) {
-                            SecondaryActionButton(title: "Refresh Status", symbol: "checkmark.seal") {
-                                Task { await proStore.refreshCatalog() }
-                            }
-
-                            SecondaryActionButton(title: "Run Scan", symbol: "arrow.clockwise") {
-                                viewModel.refresh()
-                            }
-                        }
-                    }
-                }
-
-                CardShell(fill: Color.pkCard, radius: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SectionHeading(title: "PRO STATUS", trailing: "ENTITLEMENT")
-                        Text("Included by default")
-                            .font(.system(size: 20, weight: .black))
-                            .foregroundStyle(Color.pkSecondary)
-                        Text(proStore.statusMessage ?? "All power tools are available.")
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(Color.pkMuted)
-
-                        ComparisonTableView()
-                    }
-                }
-            }
-        }
-        .fileExporter(
-            isPresented: $isExportingProfile,
-            document: exportDocument,
-            contentType: .json,
-            defaultFilename: "PortKiller-ProProfile"
-        ) { result in
-            viewModel.noteProfileExportCompletion(result)
-        }
-        .fileImporter(
-            isPresented: $isImportingProfile,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            viewModel.importProProfile(from: result)
-        }
-    }
-}
-
-struct ProProductCard: View {
-    let product: Product
-
-    var body: some View {
-        CardShell(fill: Color.pkElevated, radius: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(product.displayName)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.pkText)
-                Text(product.description)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color.pkMuted)
-                Text(product.displayPrice)
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundStyle(Color.pkPrimary)
-                Text(product.id.contains("monthly") ? "Best for short-term projects" : "Best value for long-term use")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.pkMuted.opacity(0.7))
-            }
-        }
-    }
-}
-
-struct ProProductPurchaseCard: View {
-    let product: Product
-    let action: () -> Void
-
-    var body: some View {
-        CardShell(fill: Color.pkElevated, radius: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(product.displayName)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.pkText)
-                Text(product.description)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color.pkMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(product.displayPrice)
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundStyle(Color.pkPrimary)
-
-                Button(action: action) {
-                    Text(product.id.contains("monthly") ? "Subscribe Now" : "Unlock Lifetime Pro")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryActionButtonStyle())
-            }
-        }
-    }
-}
-
-struct AutoKillRuleRow: View {
-    @EnvironmentObject private var viewModel: PortViewModel
-    let rule: AutoKillRule
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(rule.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.pkText)
-                Text(rule.summary)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.pkMuted)
-            }
-
-            Spacer()
-
-            Button {
-                viewModel.toggleAutoKillRule(rule)
-            } label: {
-                Text(rule.isEnabled ? "Enabled" : "Disabled")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .foregroundStyle(rule.isEnabled ? Color.pkSecondary : Color.pkMuted)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(rule.isEnabled ? Color.pkSecondary.opacity(0.12) : Color.pkSurface)
-                    )
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                viewModel.removeAutoKillRule(rule)
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.pkDangerText)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.pkDanger.opacity(0.15))
-                    )
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.pkSurface)
-        )
-    }
-}
-
-struct FeatureCard: View {
-    let title: String
-    let subtitle: String
-    let symbol: String
-    let tint: ColorToken
-
-    var body: some View {
-        CardShell(fill: Color.pkCard, radius: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color.token(tint))
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.pkText)
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color.pkMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(minHeight: 130, alignment: .topLeading)
-    }
-}
-
-struct ComparisonTableView: View {
-    private let rows: [(String, Bool, Bool)] = [
-        ("Basic Process Termination", true, true),
-        ("Listening Port Detection", true, true),
-        ("Real-time Traffic Heatmap", false, true),
-        ("Auto-Kill Rules engine", false, true),
-        ("Log Persistence (30 Days)", false, true)
-    ]
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Capability")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Standard")
-                    .frame(width: 100, alignment: .center)
-                Text("Pro Tier")
-                    .frame(width: 100, alignment: .center)
-            }
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .foregroundStyle(Color.pkMuted)
-            .padding(.bottom, 10)
-
-            ForEach(rows, id: \.0) { row in
-                HStack(spacing: 12) {
-                    Text(row.0)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundStyle(Color.pkText)
-                    CapabilityIndicator(isOn: row.1)
-                        .frame(width: 100, alignment: .center)
-                    CapabilityIndicator(isOn: row.2)
-                        .frame(width: 100, alignment: .center)
-                }
-                .font(.system(size: 12, weight: .medium))
-                .padding(.vertical, 12)
-
-                if row.0 != rows.last?.0 {
-                    Divider().overlay(Color.pkStroke.opacity(0.4))
-                }
-            }
-        }
-    }
-}
-
-struct CapabilityIndicator: View {
-    let isOn: Bool
-
-    var body: some View {
-        Image(systemName: isOn ? "checkmark.circle.fill" : "circle.fill")
-            .foregroundStyle(isOn ? Color.pkSuccess : Color.pkMuted.opacity(0.55))
-    }
-}
-
-struct AppStorePreviewView: View {
-    @EnvironmentObject private var viewModel: PortViewModel
-    @EnvironmentObject private var proStore: ProPurchaseManager
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color.pkBackground, Color.pkBackground, Color.pkPrimary.opacity(0.08)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 24) {
-                    VStack(spacing: 10) {
-                        Label("PORT KILLER v2.4.0", systemImage: "shield.lefthalf.filled")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.pkSuccess)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                    .fill(Color.pkSuccess.opacity(0.08))
-                            )
-
-                        Text("Reclaim Your Ports.")
-                            .font(.system(size: 58, weight: .black))
-                            .foregroundStyle(Color.pkText)
-                        Text("Instantly.")
-                            .font(.system(size: 58, weight: .black))
-                            .foregroundStyle(Color.pkPrimary)
-
-                        Text("The ultimate surgical tool for developers. No more hunting for PIDs. One click to clear your development environment.")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Color.pkMuted)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 720)
-                    }
-                    .padding(.top, 20)
-
-                    CardShell(fill: Color.pkElevated.opacity(0.7), radius: 26) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                Text("Port Killer")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(Color.pkText)
-                                Spacer()
-                                Text("ACTIVE CONNECTIONS")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.pkPrimary)
-                            }
-
-                            HStack(alignment: .top, spacing: 16) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    MetricCardView(metric: DashboardMetric(title: "TOTAL PORTS", value: "14", tint: .primary, detail: "Listening sockets"))
-                                    MetricCardView(metric: DashboardMetric(title: "MEMORY LOAD", value: "2.4 GB", tint: .secondary, detail: "Real-time footprint"))
-                                }
-                                .frame(width: 220)
-
-                                CardShell(fill: Color.pkCard, radius: 18) {
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        Text("Network Traffic Heatmap")
-                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(Color.pkMuted)
-                                        HeatmapStripView(states: [.listening, .listening, .busy, .listening, .idle, .busy, .listening, .dormant])
-                                            .frame(height: 180)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                        }
-                    }
-
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
-                        FeatureBadge(title: "Kill processes safely", subtitle: "Advanced verification layer prevents errors", symbol: "shield.checkerboard")
-                        FeatureBadge(title: "Pinned common ports", subtitle: "Keep your dev stack in easy reach", symbol: "pin.fill")
-                        FeatureBadge(title: "Menu bar quick access", subtitle: "Kill ports without switching focus", symbol: "menubar.rectangle")
-                    }
-
-                    CardShell(fill: Color.pkCard, radius: 22) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                Text(proStore.isProUnlocked ? "Pro is already unlocked" : "Choose your Pro plan")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(Color.pkText)
-                                Spacer()
-                                if proStore.isLoadingProducts {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                            }
-
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 2), spacing: 14) {
-                                ForEach(proStore.sortedProducts, id: \.id) { product in
-                                    ProProductPurchaseCard(product: product) {
-                                        Task { await proStore.purchase(product) }
-                                    }
-                                }
-                            }
-
-                            HStack(spacing: 12) {
-                                Button {
-                                    Task { await proStore.restorePurchases() }
-                                } label: {
-                                    Text("Restore Purchases")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(SecondaryActionButtonStyle())
-
-                                Button {
-                                    proStore.openManageSubscriptions()
-                                } label: {
-                                    Text("Manage Subscription")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(TertiaryActionButtonStyle())
-                            }
-                        }
-                    }
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.pkText)
-                    .frame(width: 34, height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.pkElevated.opacity(0.8))
-                    )
-            }
-            .buttonStyle(.plain)
-            .padding(20)
-        }
-    }
-}
-
-struct FeatureBadge: View {
-    let title: String
-    let subtitle: String
-    let symbol: String
-
-    var body: some View {
-        CardShell(fill: Color.pkCard, radius: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.pkPrimary)
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.pkText)
-                Text(subtitle)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.pkMuted)
-            }
         }
     }
 }
@@ -1912,20 +1249,6 @@ struct MenuBarPopoverView: View {
 
                 VStack(spacing: 10) {
                     SearchBar(text: $searchText, placeholder: "Search ports or PIDs...")
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("SYSTEM ACTIVITY")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.pkMuted)
-                            Spacer()
-                            Text(filteredPorts.isEmpty ? "STANDBY" : "HEALTHY")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(filteredPorts.isEmpty ? Color.pkMuted : Color.pkSecondary)
-                        }
-                        HeatmapStripView(states: viewModel.activityHeatmapState)
-                            .frame(height: 10)
-                    }
-                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -1943,9 +1266,21 @@ struct MenuBarPopoverView: View {
                     .padding(.vertical, 10)
 
                     VStack(spacing: 0) {
-                        ForEach(filteredPorts) { port in
-                            MenuPortRowView(port: port)
-                                .environmentObject(viewModel)
+                        if !viewModel.hasLoadedLivePorts {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Scanning...")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Color.pkMuted)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
+                        } else {
+                            ForEach(filteredPorts) { port in
+                                MenuPortRowView(port: port)
+                                    .environmentObject(viewModel)
+                            }
                         }
                     }
                 }
@@ -2042,29 +1377,6 @@ struct MenuPortRowView: View {
         case .listening: return Color.pkSecondary
         case .busy: return Color.pkWarning
         case .idle: return Color.pkMuted
-        case .dormant: return Color.pkSurface
-        }
-    }
-}
-
-struct HeatmapStripView: View {
-    let states: [PortState]
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(states.enumerated()), id: \.offset) { _, state in
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(color(for: state))
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    private func color(for state: PortState) -> Color {
-        switch state {
-        case .listening: return Color.pkSecondary
-        case .busy: return Color.pkWarning
-        case .idle: return Color.pkMuted.opacity(0.38)
         case .dormant: return Color.pkSurface
         }
     }
