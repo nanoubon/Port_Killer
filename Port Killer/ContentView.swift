@@ -466,6 +466,8 @@ struct PortTableRowView: View {
                     .foregroundStyle(isSelected ? Color.pkPrimary : Color.pkMuted)
             }
             .buttonStyle(.plain)
+            .disabled(port.isReadOnly)
+            .opacity(port.isReadOnly ? 0.3 : 1)
             .frame(width: 20)
 
             Text(port.port)
@@ -491,10 +493,13 @@ struct PortTableRowView: View {
                 .foregroundStyle(Color.pkText.opacity(0.82))
                 .frame(minWidth: 60, idealWidth: 72, alignment: .leading)
 
-            Text(port.user ?? "-")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color.pkMuted)
-                .frame(minWidth: 70, idealWidth: 88, alignment: .leading)
+            HStack(spacing: 6) {
+                Text(port.user ?? "-")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.pkMuted)
+                if port.isReadOnly { OwnerBadge(port: port) }
+            }
+            .frame(minWidth: 70, idealWidth: 88, alignment: .leading)
 
             StatusPill(state: port.state)
                 .frame(minWidth: 70, idealWidth: 84, alignment: .leading)
@@ -506,20 +511,26 @@ struct PortTableRowView: View {
                 .truncationMode(.tail)
                 .frame(minWidth: 180, idealWidth: 240, alignment: .leading)
 
-            Button {
-                viewModel.killProcess(pid: port.pid, port: port)
-            } label: {
-                Text("KILL")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .foregroundStyle(Color.pkDangerText)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.pkDanger.opacity(0.18))
-                    )
+            Group {
+                if port.isReadOnly {
+                    CopySudoKillButton(port: port)
+                } else {
+                    Button {
+                        viewModel.killProcess(pid: port.pid, port: port)
+                    } label: {
+                        Text("KILL")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(Color.pkDangerText)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.pkDanger.opacity(0.18))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
             .frame(width: 88, alignment: .trailing)
         }
         .padding(.horizontal, 16)
@@ -636,13 +647,23 @@ struct PortDetailPanel: View {
                             viewModel.setSection(.settings)
                         }
 
-                        Button {
-                            viewModel.killProcess(pid: port.pid, port: port)
-                        } label: {
-                            Text("Kill Process")
-                                .frame(maxWidth: .infinity)
+                        if port.isReadOnly {
+                            Button {
+                                viewModel.copySudoKillCommand(for: port)
+                            } label: {
+                                Text("คัดลอกคำสั่ง sudo kill \(port.pid)")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(SecondaryActionButtonStyle())
+                        } else {
+                            Button {
+                                viewModel.killProcess(pid: port.pid, port: port)
+                            } label: {
+                                Text("Kill Process")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(DangerActionButtonStyle())
                         }
-                        .buttonStyle(DangerActionButtonStyle())
                     }
 
                     Text("You will be asked to confirm before the process is closed")
@@ -831,13 +852,23 @@ struct PinnedPortCard: View {
                     }
                     .buttonStyle(SecondaryActionButtonStyle())
 
-                    Button {
-                        viewModel.killProcess(pid: port.pid, port: port)
-                    } label: {
-                        Text("Kill")
-                            .frame(maxWidth: .infinity)
+                    if port.isReadOnly {
+                        Button {
+                            viewModel.copySudoKillCommand(for: port)
+                        } label: {
+                            Text("Copy sudo kill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(TertiaryActionButtonStyle())
+                    } else {
+                        Button {
+                            viewModel.killProcess(pid: port.pid, port: port)
+                        } label: {
+                            Text("Kill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(TertiaryActionButtonStyle())
                     }
-                    .buttonStyle(TertiaryActionButtonStyle())
                 }
             }
         }
@@ -1317,6 +1348,49 @@ struct MenuBarPopoverView: View {
     }
 }
 
+/// Badge for read-only rows (ports held by root / another user).
+struct OwnerBadge: View {
+    let port: PortItem
+
+    var body: some View {
+        Text(port.ownerLabel ?? "other user")
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .foregroundStyle(Color.pkWarning)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.pkWarning.opacity(0.16))
+            )
+            .help("อ่านอย่างเดียว: process ของ \(port.ownerLabel ?? "user อื่น") ปิดจากแอปนี้ไม่ได้")
+    }
+}
+
+/// Replaces the kill button on read-only rows: copies `sudo kill <pid>` instead of acting.
+struct CopySudoKillButton: View {
+    @EnvironmentObject private var viewModel: PortViewModel
+    let port: PortItem
+
+    var body: some View {
+        Button {
+            viewModel.copySudoKillCommand(for: port)
+        } label: {
+            Text("COPY")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .foregroundStyle(Color.pkMuted)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.pkSurface.opacity(0.92))
+                )
+        }
+        .buttonStyle(.plain)
+        .help("คัดลอกคำสั่ง sudo kill \(port.pid)")
+        .accessibilityLabel("คัดลอกคำสั่ง sudo kill \(port.pid)")
+    }
+}
+
 struct MenuPortRowView: View {
     @EnvironmentObject private var viewModel: PortViewModel
     let port: PortItem
@@ -1348,21 +1422,36 @@ struct MenuPortRowView: View {
                         .fill(Color.pkSurface.opacity(0.92))
                 )
 
-            Button {
-                viewModel.killProcess(pid: port.pid, port: port, origin: .menuBar)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 24, height: 24)
-                    .foregroundStyle(Color.pkDangerText)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.pkDanger.opacity(0.18))
-                    )
+            if port.isReadOnly {
+                OwnerBadge(port: port)
+                Button {
+                    viewModel.copySudoKillCommand(for: port)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24)
+                        .foregroundStyle(Color.pkMuted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("คัดลอกคำสั่ง sudo kill \(port.pid)")
+                .help("คัดลอกคำสั่ง sudo kill \(port.pid)")
+            } else {
+                Button {
+                    viewModel.killProcess(pid: port.pid, port: port, origin: .menuBar)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24)
+                        .foregroundStyle(Color.pkDangerText)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.pkDanger.opacity(0.18))
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("ปิด \(port.processName) port \(port.port)")
+                .help("ปิด process")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("ปิด \(port.processName) port \(port.port)")
-            .help("ปิด process")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)

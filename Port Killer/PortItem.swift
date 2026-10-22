@@ -75,6 +75,10 @@ struct PortItem: Identifiable, Hashable {
     var loadDescription: String?
     /// Bind addresses (merged IPv4 + IPv6), e.g. ["*"] or ["127.0.0.1", "::1"].
     var addresses: [String]
+    /// Seen only through netstat (root / other user): display only, must never be killed from the app.
+    var isReadOnly: Bool
+    /// "root", a username, or "other user" for read-only rows.
+    var ownerLabel: String?
 
     var id: String {
         "\(port)-\(pid)-\(processName)"
@@ -91,7 +95,9 @@ struct PortItem: Identifiable, Hashable {
         command: String? = nil,
         uptime: String? = nil,
         loadDescription: String? = nil,
-        addresses: [String] = []
+        addresses: [String] = [],
+        isReadOnly: Bool = false,
+        ownerLabel: String? = nil
     ) {
         self.processName = processName
         self.pid = pid
@@ -104,6 +110,8 @@ struct PortItem: Identifiable, Hashable {
         self.uptime = uptime
         self.loadDescription = loadDescription
         self.addresses = addresses
+        self.isReadOnly = isReadOnly
+        self.ownerLabel = ownerLabel
     }
 
     func hash(into hasher: inout Hasher) {

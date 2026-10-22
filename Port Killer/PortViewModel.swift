@@ -87,7 +87,7 @@ final class PortViewModel: ObservableObject {
     }
 
     var selectedPorts: [PortItem] {
-        ports.filter { selectedPortIDs.contains($0.id) }
+        ports.filter { selectedPortIDs.contains($0.id) && !$0.isReadOnly }
     }
 
     var pinnedPortItems: [PortItem] {
@@ -177,6 +177,7 @@ final class PortViewModel: ObservableObject {
     }
 
     func toggleSelection(for port: PortItem) {
+        guard !port.isReadOnly else { return }
         if selectedPortIDs.contains(port.id) {
             selectedPortIDs.remove(port.id)
         } else {
@@ -227,6 +228,14 @@ final class PortViewModel: ObservableObject {
         requestKill([candidate], origin: origin)
     }
 
+    /// Copies `sudo kill <pid>` for read-only (root / other user) rows. Nothing is executed.
+    func copySudoKillCommand(for port: PortItem) {
+        guard let pid = Int32(port.pid), pid > 1 else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("sudo kill \(pid)", forType: .string)
+        showBanner("คัดลอก sudo kill \(pid) แล้ว")
+    }
+
     func killSelectedPorts(origin: KillOrigin = .mainWindow) {
         let items = selectedPorts
         guard !items.isEmpty else {
@@ -241,10 +250,20 @@ final class PortViewModel: ObservableObject {
             showBanner("ยังไม่ได้สแกน port")
             return
         }
+        // Defense in depth: read-only (root / other user) rows can never be killed from the app,
+        // whatever the caller passed in. Check the live scan row as well as the candidate.
+        let isReadOnly: (PortItem) -> Bool = { item in
+            item.isReadOnly || (self.ports.first { $0.id == item.id }?.isReadOnly ?? false)
+        }
+        if candidates.contains(where: isReadOnly) {
+            showBanner("process ของ root/user อื่น ปิดจากแอปนี้ไม่ได้ ใช้ sudo kill ในเทอร์มินัล")
+        }
         // Only items that are in the current scan result can be requested.
-        let live = candidates.compactMap { candidate in ports.first { $0.id == candidate.id } }
+        let live = candidates.compactMap { candidate in
+            isReadOnly(candidate) ? nil : ports.first { $0.id == candidate.id }
+        }
         guard !live.isEmpty else {
-            showBanner("process นี้ไม่อยู่ในรายการแล้ว")
+            if !candidates.contains(where: isReadOnly) { showBanner("process นี้ไม่อยู่ในรายการแล้ว") }
             return
         }
 
@@ -485,7 +504,9 @@ final class PortViewModel: ObservableObject {
             state: .listening,
             user: snapshot.user,
             command: snapshot.processName,
-            addresses: snapshot.addresses
+            addresses: snapshot.addresses,
+            isReadOnly: snapshot.isReadOnly,
+            ownerLabel: snapshot.ownerLabel
         )
     }
 

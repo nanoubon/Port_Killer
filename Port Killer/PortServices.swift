@@ -21,7 +21,43 @@ actor PortScanService {
         }
     }
 
+    /// lsof is the source of truth (full names, current user). netstat adds root / other-user
+    /// listeners as read-only rows. A netstat failure is silent; an lsof failure is thrown.
     func scanListeningPorts() async throws -> [PortScanSnapshot] {
+        let lsofRows = try scanLsof()
+        try Task.checkCancellation()
+        return Self.merge(lsof: lsofRows, netstat: scanNetstat())
+    }
+
+    private func scanNetstat() -> [NetstatRow] {
+        guard let result = ShellHelper.executeCommand(
+            command: "/usr/sbin/netstat",
+            arguments: ["-anv", "-p", "tcp"]
+        ), result.succeeded else { return [] }
+        return NetstatParser.parse(result.standardOutput)
+    }
+
+    /// Adds netstat-only (pid, port) pairs as read-only snapshots after the lsof rows.
+    nonisolated static func merge(lsof: [PortScanSnapshot], netstat: [NetstatRow]) -> [PortScanSnapshot] {
+        var known = Set(lsof.map { "\($0.pid)-\($0.port)" })
+        var merged = lsof
+        for row in netstat where known.insert("\(row.pid)-\(row.port)").inserted {
+            guard let pidValue = Int32(row.pid) else { continue }
+            let owner = ProcessInspector.ownerLabel(of: pidValue)
+            merged.append(PortScanSnapshot(
+                processName: ProcessInspector.fullName(of: pidValue, truncated: row.processName),
+                pid: row.pid,
+                user: owner,
+                port: row.port,
+                addresses: row.addresses,
+                isReadOnly: true,
+                ownerLabel: owner
+            ))
+        }
+        return merged
+    }
+
+    private func scanLsof() throws -> [PortScanSnapshot] {
         try Task.checkCancellation()
 
         guard let result = ShellHelper.executeCommand(
@@ -83,6 +119,29 @@ enum ProcessInspector {
             uid: info.pbi_uid,
             path: executablePath(of: pid)
         )
+    }
+
+    /// "root", the account name, or "other user" when the uid cannot be resolved.
+    nonisolated static func ownerLabel(of pid: Int32) -> String {
+        guard let uid = identity(of: pid)?.uid else { return "other user" }
+        if uid == 0 { return "root" }
+        if let entry = getpwuid(uid), let name = String(validatingUTF8: entry.pointee.pw_name), !name.isEmpty {
+            return name
+        }
+        return "other user"
+    }
+
+    /// Full process name: the executable's file name when it extends netstat's truncated name,
+    /// else proc_name, else the truncated netstat name.
+    nonisolated static func fullName(of pid: Int32, truncated: String) -> String {
+        if let path = executablePath(of: pid) {
+            let base = (path as NSString).lastPathComponent
+            if !base.isEmpty, base.hasPrefix(truncated) { return base }
+        }
+        if let name = name(of: pid), !name.isEmpty, name.hasPrefix(truncated) || truncated.hasPrefix(name) {
+            return name.count >= truncated.count ? name : truncated
+        }
+        return truncated
     }
 
     nonisolated static func executablePath(of pid: Int32) -> String? {

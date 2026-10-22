@@ -8,13 +8,22 @@ struct PortScanSnapshot: Sendable, Hashable {
     let port: String
     /// Bind addresses without brackets, in first-seen order ("*", "127.0.0.1", "::1", "fe80::1%lo0").
     let addresses: [String]
+    /// True for rows that only netstat could see (root / other users): shown, never killable.
+    let isReadOnly: Bool
+    /// "root", a username, or "other user". Only set for read-only rows.
+    let ownerLabel: String?
 
-    init(processName: String, pid: String, user: String, port: String, addresses: [String] = []) {
+    init(
+        processName: String, pid: String, user: String, port: String, addresses: [String] = [],
+        isReadOnly: Bool = false, ownerLabel: String? = nil
+    ) {
         self.processName = processName
         self.pid = pid
         self.user = user
         self.port = port
         self.addresses = addresses
+        self.isReadOnly = isReadOnly
+        self.ownerLabel = ownerLabel
     }
 }
 
