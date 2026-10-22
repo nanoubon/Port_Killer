@@ -99,6 +99,19 @@ enum ProcessInspector {
         return String(cString: buffer)
     }
 
+    nonisolated static func identity(of pid: Int32) -> ProcessIdentity? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        let written = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size)
+        guard written == size, info.pbi_pid == UInt32(pid) else { return nil }
+        return ProcessIdentity(
+            startSeconds: info.pbi_start_tvsec,
+            startMicroseconds: info.pbi_start_tvusec,
+            uid: info.pbi_uid,
+            path: executablePath(of: pid)
+        )
+    }
+
     nonisolated static func executablePath(of pid: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: 4096)
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
@@ -112,7 +125,9 @@ actor ProcessKillerService {
     private static let pollNanoseconds: UInt64 = 100_000_000
 
     /// Sends SIGTERM and polls up to ~3s for the process to exit.
-    func terminate(pid: Int32) async -> KillSignalOutcome {
+    /// `verify` runs immediately before the signal; false means the identity changed.
+    func terminate(pid: Int32, verify: @Sendable () -> Bool) async -> KillSignalOutcome {
+        guard verify() else { return .alreadyGone }
         if let early = Self.send(SIGTERM, to: pid) { return early }
 
         var waited: UInt64 = 0
@@ -124,7 +139,8 @@ actor ProcessKillerService {
         return Self.exists(pid) ? .stillRunning : .terminated
     }
 
-    func forceKill(pid: Int32) async -> KillSignalOutcome {
+    func forceKill(pid: Int32, verify: @Sendable () -> Bool) async -> KillSignalOutcome {
+        guard verify() else { return .alreadyGone }
         if let early = Self.send(SIGKILL, to: pid) { return early }
 
         var waited: UInt64 = 0

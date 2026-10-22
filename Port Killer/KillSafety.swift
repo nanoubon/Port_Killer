@@ -24,6 +24,14 @@ enum KillWarning: Hashable, Sendable {
     var isBlocking: Bool { self == .selfProcess }
 }
 
+/// Stable identity of a running process: PID alone can be recycled, start time cannot.
+struct ProcessIdentity: Equatable, Sendable {
+    let startSeconds: UInt64
+    let startMicroseconds: UInt64
+    let uid: UInt32
+    let path: String?
+}
+
 enum KillSafety {
     private static let systemPathPrefixes = ["/System/", "/usr/libexec/", "/usr/sbin/"]
     private static let knownSystemNames = ["ControlCenter", "ControlCe", "rapportd", "AirPlayXPCHelper"]
@@ -32,8 +40,10 @@ enum KillSafety {
     static func classify(
         _ item: PortItem,
         currentUser: String,
+        currentUID: UInt32,
         ownPID: Int32,
-        executablePath: (Int32) -> String?
+        executablePath: (Int32) -> String?,
+        identity: (Int32) -> ProcessIdentity?
     ) -> [KillWarning] {
         var warnings: [KillWarning] = []
         let pid = Int32(item.pid)
@@ -49,7 +59,10 @@ enum KillSafety {
         }
         if isSystem { warnings.append(.system) }
 
-        if let user = item.user, !usersMatch(user, currentUser) {
+        // Prefer the numeric uid; fall back to lsof's (truncated) user name only without identity.
+        if let pid, let id = identity(pid) {
+            if id.uid != currentUID { warnings.append(.otherUser) }
+        } else if let user = item.user, !usersMatch(user, currentUser) {
             warnings.append(.otherUser)
         }
 
@@ -59,24 +72,55 @@ enum KillSafety {
         return warnings
     }
 
-    /// True only if the PID still exists, still has the scanned name and still listens on the port.
+    /// True only if the PID still has the identity captured at request time, the scanned name
+    /// and still listens on the port.
     static func revalidate(
         _ item: PortItem,
+        captured: ProcessIdentity,
+        identity: (Int32) -> ProcessIdentity?,
         currentProcessName: (Int32) -> String?,
         stillListeningOnPort: (Int32, Int) -> Bool
     ) -> Bool {
         guard let pid = Int32(item.pid), let port = Int(item.port) else { return false }
+        guard let live = identity(pid), live == captured else { return false }
         guard let liveName = currentProcessName(pid) else { return false }
         guard namesMatch(item.processName, liveName) else { return false }
         return stillListeningOnPort(pid, port)
     }
 
-    /// lsof truncates names and escapes spaces as \x20, so compare with prefix tolerance.
+    /// lsof truncates names to 9 characters and escapes spaces as \x20: exact match, or prefix
+    /// match only when the shorter name is at least lsof's truncation length.
     static func namesMatch(_ scanned: String, _ live: String) -> Bool {
         let a = normalizedName(scanned)
         let b = normalizedName(live)
         guard !a.isEmpty, !b.isEmpty else { return false }
-        return a.hasPrefix(b) || b.hasPrefix(a)
+        if a == b { return true }
+        let (short, long) = a.count <= b.count ? (a, b) : (b, a)
+        return short.count >= 9 && long.hasPrefix(short)
+    }
+
+    /// Strips control/format/line/paragraph separators, collapses whitespace, caps length.
+    static func sanitizeForDisplay(_ text: String, limit: Int = 64) -> String {
+        var out = ""
+        var lastWasSpace = false
+        for scalar in text.unicodeScalars {
+            switch scalar.properties.generalCategory {
+            case .control, .format, .lineSeparator, .paragraphSeparator:
+                continue
+            default:
+                break
+            }
+            if scalar.properties.isWhitespace {
+                if !lastWasSpace { out.unicodeScalars.append(" ") }
+                lastWasSpace = true
+            } else {
+                out.unicodeScalars.append(scalar)
+                lastWasSpace = false
+            }
+        }
+        out = out.trimmingCharacters(in: .whitespaces)
+        if out.count > limit { out = String(out.prefix(limit - 1)) + "…" }
+        return out
     }
 
     static func normalizedName(_ name: String) -> String {

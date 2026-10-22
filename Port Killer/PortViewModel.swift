@@ -23,6 +23,9 @@ final class PortViewModel: ObservableObject {
     @Published var pendingForceKill: KillRequest?
     @Published var resultBanner: String?
 
+    private var pendingExpiryTask: Task<Void, Never>?
+    private static let pendingLifetimeNanoseconds: UInt64 = 30_000_000_000
+
     private let portScanService = PortScanService()
     private let processKillerService = ProcessKillerService()
     private let launchAtLoginService = LaunchAtLoginService()
@@ -247,39 +250,76 @@ final class PortViewModel: ObservableObject {
         let user = NSUserName()
         var entries: [KillRequest.Entry] = []
         var refusedSelf = false
+        var refusedUnverifiable = false
         for item in live {
+            guard let pid = Int32(item.pid), let identity = ProcessInspector.identity(of: pid) else {
+                refusedUnverifiable = true
+                continue
+            }
             let warnings = KillSafety.classify(
                 item,
                 currentUser: user,
+                currentUID: getuid(),
                 ownPID: ownPID,
-                executablePath: ProcessInspector.executablePath(of:)
+                executablePath: ProcessInspector.executablePath(of:),
+                identity: ProcessInspector.identity(of:)
             )
             if warnings.contains(where: \.isBlocking) {
                 refusedSelf = true
                 continue
             }
-            let fullName = Int32(item.pid).flatMap(ProcessInspector.name(of:)) ?? item.processName
-            entries.append(KillRequest.Entry(item: item, displayName: fullName, warnings: warnings))
+            let fullName = ProcessInspector.name(of: pid) ?? item.processName
+            entries.append(
+                KillRequest.Entry(
+                    item: item,
+                    displayName: KillSafety.sanitizeForDisplay(fullName),
+                    path: identity.path.map { KillSafety.sanitizeForDisplay($0) },
+                    identity: identity,
+                    warnings: warnings
+                )
+            )
         }
 
         if refusedSelf {
             showBanner("ไม่สามารถปิด Port Killer เองได้")
+        } else if refusedUnverifiable && entries.isEmpty {
+            showBanner("ตรวจสอบ process ไม่ได้ (อาจปิดไปแล้ว)")
         }
         guard !entries.isEmpty else { return }
-        pendingKill = KillRequest(origin: origin, entries: entries)
+        setPending(kill: KillRequest(origin: origin, entries: entries), force: nil)
+    }
+
+    /// One pending request at a time across all origins; expires after 30 seconds.
+    private func setPending(kill: KillRequest?, force: KillRequest?) {
+        pendingExpiryTask?.cancel()
+        pendingKill = kill
+        pendingForceKill = force
+        guard kill != nil || force != nil else { return }
+        pendingExpiryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.pendingLifetimeNanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.pendingKill = nil
+            self?.pendingForceKill = nil
+        }
     }
 
     func cancelPendingKill() {
-        pendingKill = nil
+        setPending(kill: nil, force: pendingForceKill)
     }
 
     func cancelForceKill() {
-        pendingForceKill = nil
+        setPending(kill: pendingKill, force: nil)
+    }
+
+    /// Clears pending requests shown in a surface that is going away.
+    func cancelPending(origin: KillOrigin) {
+        if pendingKill?.origin == origin { cancelPendingKill() }
+        if pendingForceKill?.origin == origin { cancelForceKill() }
     }
 
     func confirmKill() {
         guard let request = pendingKill else { return }
-        pendingKill = nil
+        setPending(kill: nil, force: nil)
         Task { [weak self] in
             await self?.execute(request, force: false)
         }
@@ -287,7 +327,7 @@ final class PortViewModel: ObservableObject {
 
     func confirmForceKill() {
         guard let request = pendingForceKill else { return }
-        pendingForceKill = nil
+        setPending(kill: nil, force: nil)
         Task { [weak self] in
             await self?.execute(request, force: true)
         }
@@ -441,27 +481,29 @@ final class PortViewModel: ObservableObject {
         )
     }
 
-    /// Re-validates every item right before signalling, then reports per-item results.
+    /// Re-validates every item right before ITS signal (fresh scan + pinned identity), then reports.
     private func execute(_ request: KillRequest, force: Bool) async {
-        // Fresh scan so we can confirm the pid+port pair still listens.
-        let listening: Set<String>
-        do {
-            let snapshots = try await portScanService.scanListeningPorts()
-            listening = Set(snapshots.map { "\($0.pid)-\($0.port)" })
-        } catch {
-            showBanner("ตรวจสอบ process ก่อนปิดไม่สำเร็จ จึงไม่ได้ปิดอะไร")
-            return
-        }
-
         var messages: [String] = []
         var needForce: [KillRequest.Entry] = []
 
         for entry in request.entries {
             let item = entry.item
-            let label = "\(entry.displayName) (\(item.port))"
+            let label = "\(entry.displayName) (\(KillSafety.sanitizeForDisplay(item.port, limit: 8)))"
+
+            // Fresh scan per entry: earlier entries' SIGTERM waits can take seconds.
+            let listening: Set<String>
+            do {
+                let snapshots = try await portScanService.scanListeningPorts()
+                listening = Set(snapshots.map { "\($0.pid)-\($0.port)" })
+            } catch {
+                messages.append("ข้าม \(label): ตรวจสอบก่อนปิดไม่สำเร็จ")
+                continue
+            }
 
             let valid = KillSafety.revalidate(
                 item,
+                captured: entry.identity,
+                identity: ProcessInspector.identity(of:),
                 currentProcessName: ProcessInspector.name(of:),
                 stillListeningOnPort: { pid, port in listening.contains("\(pid)-\(port)") }
             )
@@ -476,9 +518,11 @@ final class PortViewModel: ObservableObject {
             guard killInFlightPIDs.insert(item.pid).inserted else { continue }
             defer { killInFlightPIDs.remove(item.pid) }
 
+            let captured = entry.identity
+            let verify: @Sendable () -> Bool = { ProcessInspector.identity(of: pid) == captured }
             let outcome = force
-                ? await processKillerService.forceKill(pid: pid)
-                : await processKillerService.terminate(pid: pid)
+                ? await processKillerService.forceKill(pid: pid, verify: verify)
+                : await processKillerService.terminate(pid: pid, verify: verify)
 
             switch outcome {
             case .terminated:
@@ -491,7 +535,7 @@ final class PortViewModel: ObservableObject {
                     needForce.append(entry)
                 }
             case .notPermitted:
-                messages.append("ไม่มีสิทธิ์ปิด process ของ \(item.user ?? "user อื่น")")
+                messages.append("ไม่มีสิทธิ์ปิด process ของ \(KillSafety.sanitizeForDisplay(item.user ?? "user อื่น", limit: 16))")
             case .alreadyGone:
                 messages.append("process ปิดไปก่อนแล้ว (\(label))")
             case .failed(let code):
@@ -504,7 +548,7 @@ final class PortViewModel: ObservableObject {
             showBanner(messages.joined(separator: "\n"))
         }
         if !needForce.isEmpty {
-            pendingForceKill = KillRequest(origin: request.origin, entries: needForce)
+            setPending(kill: nil, force: KillRequest(origin: request.origin, entries: needForce))
         }
         requestPortRefresh()
     }
@@ -594,6 +638,10 @@ struct KillRequest: Identifiable {
         let item: PortItem
         /// Full name from libproc when available (lsof truncates names).
         let displayName: String
+        /// Sanitized executable path, if known.
+        let path: String?
+        /// Identity captured when the request was created; every signal re-checks it.
+        let identity: ProcessIdentity
         let warnings: [KillWarning]
         var id: String { item.id }
     }
