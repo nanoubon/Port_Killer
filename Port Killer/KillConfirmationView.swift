@@ -11,15 +11,16 @@ private struct KillOverlayModifier: ViewModifier {
             .overlay(alignment: .bottom) {
                 if let banner = viewModel.resultBanner {
                     Text(banner)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.pkText)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(12)
+                        .textSelection(.enabled)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .frame(maxWidth: 420, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.pkElevated))
-                        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
                         .padding(14)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .accessibilityAddTraits(.isStaticText)
@@ -68,64 +69,72 @@ struct KillConfirmationPanel: View {
     let onConfirm: () -> Void
 
     @State private var confirmEnabled = false
+    @State private var entryListHeight: CGFloat = 220
 
     private var uniqueWarnings: [KillWarning] {
         var seen = Set<KillWarning>()
         return request.entries.flatMap(\.warnings).filter { seen.insert($0).inserted }
     }
 
+    private var entryList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(request.entries) { entry in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(entry.displayName)
+                        .font(.body.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let path = entry.path {
+                        Text(path)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Text("Port \(KillSafety.sanitizeForDisplay(entry.item.port, limit: 8)) · PID \(KillSafety.sanitizeForDisplay(entry.item.pid, limit: 12))")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     var body: some View {
         ZStack {
-            Color.black.opacity(0.45)
+            Color.black.opacity(0.3)
                 .ignoresSafeArea()
                 .onTapGesture { }
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(title)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color.pkText)
+                    .font(.headline)
 
                 // Warnings sit above the scrolling list so a long name can never push them out of view.
                 if !uniqueWarnings.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(uniqueWarnings, id: \.self) { warning in
                             Text(warning.message)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.yellow)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
 
+                // Sized to the content; scrolls only when the list is taller than the cap.
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(request.entries) { entry in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(entry.displayName)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color.pkText)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                if let path = entry.path {
-                                    Text(path)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(Color.pkMuted)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-                                Text("Port \(KillSafety.sanitizeForDisplay(entry.item.port, limit: 8)) · PID \(KillSafety.sanitizeForDisplay(entry.item.pid, limit: 12))")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(Color.pkMuted)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    entryList
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: EntryListHeightKey.self, value: proxy.size.height)
+                        })
                 }
-                .frame(maxHeight: 220)
+                .frame(height: min(entryListHeight, 220))
+                .onPreferenceChange(EntryListHeightKey.self) { entryListHeight = $0 }
 
                 Text(footnote)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.pkMuted)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack {
@@ -147,8 +156,9 @@ struct KillConfirmationPanel: View {
             }
             .padding(16)
             .frame(maxWidth: 360)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.pkSidebar))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.pkStroke.opacity(0.5), lineWidth: 1))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
+            .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
             .padding(16)
         }
         .task(id: request.id) {
@@ -158,4 +168,9 @@ struct KillConfirmationPanel: View {
             confirmEnabled = true
         }
     }
+}
+
+private struct EntryListHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

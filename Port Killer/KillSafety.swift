@@ -49,7 +49,7 @@ enum KillSafety {
         let pid = Int32(item.pid)
         let name = normalizedName(item.processName)
 
-        if dockerNamePrefixes.contains(where: { name.lowercased().hasPrefix($0) }) {
+        if isDocker(processName: name) {
             warnings.append(.docker)
         }
 
@@ -70,6 +70,11 @@ enum KillSafety {
             warnings.append(.selfProcess)
         }
         return warnings
+    }
+
+    static func isDocker(processName: String) -> Bool {
+        let name = normalizedName(processName).lowercased()
+        return dockerNamePrefixes.contains { name.hasPrefix($0) }
     }
 
     /// True only if the PID still has the identity captured at request time, the scanned name

@@ -1,4 +1,3 @@
-import SwiftUI
 //
 //  Port_KillerApp.swift
 //  Port Killer
@@ -6,19 +5,59 @@ import SwiftUI
 //  Created by nano on 27/2/2569 BE.
 //
 
+import SwiftUI
 
-
+/// SceneBuilder has no `if #available`, so the macOS 15+ launch behavior (`.suppressed`, the main
+/// window must never open by itself at launch or login) needs a separate App type; the entry point
+/// picks one at runtime. macOS 14 has no such API, so there MainWindowView closes the launch-time
+/// window itself.
 @main
+enum PortKillerLauncher {
+    static func main() {
+        if #available(macOS 15, *) {
+            Port_KillerApp.main()
+        } else {
+            LegacyPort_KillerApp.main()
+        }
+    }
+}
+
+@available(macOS 15, *)
 struct Port_KillerApp: App {
     @StateObject private var viewModel = PortViewModel()
 
     var body: some Scene {
         Window("Port Killer", id: "main") {
-            ContentView()
-                .environmentObject(viewModel)
+            MainWindowView().environmentObject(viewModel)
         }
-        .defaultSize(width: 980, height: 740)
+        .defaultSize(width: 820, height: 520)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .commands { PortCommands(viewModel: viewModel) }
 
+        SharedScenes(viewModel: viewModel)
+    }
+}
+
+struct LegacyPort_KillerApp: App {
+    @StateObject private var viewModel = PortViewModel()
+
+    var body: some Scene {
+        Window("Port Killer", id: "main") {
+            MainWindowView().environmentObject(viewModel)
+        }
+        .defaultSize(width: 820, height: 520)
+        .commands { PortCommands(viewModel: viewModel) }
+
+        SharedScenes(viewModel: viewModel)
+    }
+}
+
+/// Menu bar popover and Settings, identical on every supported macOS version.
+struct SharedScenes: Scene {
+    @ObservedObject var viewModel: PortViewModel
+
+    var body: some Scene {
         MenuBarExtra {
             MenuBarPopoverView()
                 .environmentObject(viewModel)
@@ -31,6 +70,26 @@ struct Port_KillerApp: App {
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .accessibilityLabel("Port Killer")
         }
-        .menuBarExtraStyle(.window) // Uses a popover style window instead of a standard menu list
+        .menuBarExtraStyle(.window) // popover-style window instead of a standard menu list
+
+        Settings {
+            SettingsView()
+                .environmentObject(viewModel)
+        }
+    }
+}
+
+struct PortCommands: Commands {
+    @ObservedObject var viewModel: PortViewModel
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {}
+        CommandMenu("Ports") {
+            Button("รีเฟรช") { viewModel.refresh() }
+                .keyboardShortcut("r")
+            Button("Kill ที่เลือก") { viewModel.killSelectedPorts(origin: .mainWindow) }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(viewModel.selectedPorts.isEmpty)
+        }
     }
 }

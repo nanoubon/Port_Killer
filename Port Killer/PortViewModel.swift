@@ -8,8 +8,6 @@ import SwiftUI
 final class PortViewModel: ObservableObject {
     @Published var ports: [PortItem] = []
     @Published var searchText: String = ""
-    @Published var selectedSection: AppSection = .activePorts
-    @Published var selectedPortID: String?
     @Published var selectedPortIDs: Set<String> = []
     @Published private(set) var pinStore = PinStore()
     @Published var isAutoRefreshEnabled: Bool = true
@@ -18,7 +16,6 @@ final class PortViewModel: ObservableObject {
     @Published private(set) var launchAtLoginStatus: SMAppService.Status = .notRegistered
     /// Non-nil when the last register/unregister attempt failed.
     @Published private(set) var launchAtLoginMessage: String?
-    @Published var debugMessage: String = "Initializing..."
     @Published var lastRefreshAt: Date?
     @Published var hasLoadedLivePorts: Bool = false
     /// Non-nil when the last scan failed, so the UI does not present a failure as "no ports".
@@ -74,21 +71,6 @@ final class PortViewModel: ObservableObject {
         autoRefreshCancellable?.cancel()
     }
 
-    var filteredPorts: [PortItem] {
-        ports(matching: searchText)
-    }
-
-    var visiblePorts: [PortItem] {
-        ports(matching: searchText)
-    }
-
-    var selectedPort: PortItem? {
-        if let selectedPortID {
-            return ports.first { $0.id == selectedPortID }
-        }
-        return visiblePorts.first
-    }
-
     var selectedPorts: [PortItem] {
         ports.filter { selectedPortIDs.contains($0.id) && !$0.isReadOnly }
     }
@@ -98,25 +80,6 @@ final class PortViewModel: ObservableObject {
     /// One entry per pin. `liveItem == nil` means "not running": show it dimmed, never killable, unpin only.
     var pinnedEntries: [PinnedEntry] {
         pinStore.entries(live: ports)
-    }
-
-    var pinnedPortItems: [PortItem] {
-        pinnedEntries.compactMap(\.liveItem)
-    }
-
-    var pinnedSummary: String {
-        "\(pinnedBookmarks.count) pinned"
-    }
-
-    var totalSelectedCount: Int {
-        selectedPortIDs.count
-    }
-
-    var remainingSummary: String {
-        if ports.isEmpty {
-            return "No live ports"
-        }
-        return "\(ports.count) active"
     }
 
     func ports(matching query: String) -> [PortItem] {
@@ -136,32 +99,6 @@ final class PortViewModel: ObservableObject {
         })
     }
 
-    func setSection(_ section: AppSection) {
-        selectedSection = section
-    }
-
-    func toggleSelection(for port: PortItem) {
-        guard !port.isReadOnly else { return }
-        if selectedPortIDs.contains(port.id) {
-            selectedPortIDs.remove(port.id)
-        } else {
-            selectedPortIDs.insert(port.id)
-            selectedPortID = port.id
-        }
-    }
-
-    func clearSelection() {
-        selectedPortIDs.removeAll()
-    }
-
-    func selectPort(_ port: PortItem) {
-        selectedPortID = port.id
-    }
-
-    func selectPort(withID id: String?) {
-        selectedPortID = id
-    }
-
     func isPinned(_ port: PortItem) -> Bool {
         pinStore.isPinned(port)
     }
@@ -174,10 +111,6 @@ final class PortViewModel: ObservableObject {
     func unpin(_ bookmark: PortBookmark) {
         pinStore.remove(bookmark)
         pinStore.save()
-    }
-
-    func portBookmark(for port: PortItem) -> PortBookmark {
-        PortBookmark(portItem: port)
     }
 
     /// Only creates a pending request. The UI must confirm before any signal is sent.
@@ -196,6 +129,13 @@ final class PortViewModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("sudo kill \(pid)", forType: .string)
         showBanner("คัดลอก sudo kill \(pid) แล้ว")
+    }
+
+    /// Kill request for specific rows (context menu). Read-only and unknown ids are dropped by `requestKill`.
+    func killPorts(ids: Set<String>, origin: KillOrigin) {
+        let items = ports.filter { ids.contains($0.id) }
+        guard !items.isEmpty else { return }
+        requestKill(items, origin: origin)
     }
 
     func killSelectedPorts(origin: KillOrigin = .mainWindow) {
@@ -330,14 +270,6 @@ final class PortViewModel: ObservableObject {
         requestPortRefresh()
     }
 
-    func fetchActivePorts() {
-        requestPortRefresh()
-    }
-
-    func toggleAutoRefresh() {
-        setAutoRefreshEnabled(!isAutoRefreshEnabled)
-    }
-
     func setAutoRefreshEnabled(_ enabled: Bool) {
         isAutoRefreshEnabled = enabled
         persistBool(enabled, forKey: StorageKey.isAutoRefreshEnabled)
@@ -386,10 +318,6 @@ final class PortViewModel: ObservableObject {
         }
     }
 
-    func toggleLaunchAtLogin() {
-        setLaunchAtLogin(!isLaunchAtLoginEnabled)
-    }
-
     func openLoginItemsSettings() {
         launchAtLoginService.openLoginItemsSettings()
     }
@@ -398,33 +326,8 @@ final class PortViewModel: ObservableObject {
         NSApp.terminate(nil)
     }
 
-    func portActionLabel(for port: PortItem) -> String {
-        isPinned(port) ? "Pinned" : "Pin"
-    }
-
-    func detailCommand(for port: PortItem) -> String {
-        port.command ?? "-"
-    }
-
-    func detailUser(for port: PortItem) -> String {
-        port.user ?? "-"
-    }
-
-    func detailLoad(for port: PortItem) -> String {
-        port.loadDescription ?? "-"
-    }
-
-    func detailSubtitle(for port: PortItem) -> String {
-        "\(port.processName) • PID \(port.pid)"
-    }
-
-    func displayName(for port: PortItem) -> String {
-        port.processName
-    }
-
     private func requestPortRefresh() {
         lastRefreshAt = Date()
-        debugMessage = "Fetching ports..."
         refreshGeneration += 1
         let generation = refreshGeneration
 
@@ -462,9 +365,6 @@ final class PortViewModel: ObservableObject {
         }
         reconcileSelection()
 
-        debugMessage = ports.isEmpty
-            ? "No listening ports matched the current scan."
-            : "Successfully fetched \(ports.count) ports."
     }
 
     private func applyScanFailure(_ error: Error, generation: Int) {
@@ -474,21 +374,15 @@ final class PortViewModel: ObservableObject {
         hasLoadedLivePorts = true
         scanError = error.localizedDescription
         reconcileSelection()
-        debugMessage = error.localizedDescription
     }
 
     private func makePortItem(from snapshot: PortScanSnapshot) -> PortItem {
-        let icon = Int32(snapshot.pid).flatMap { NSRunningApplication(processIdentifier: $0)?.icon }
-
         return PortItem(
             processName: snapshot.processName,
             pid: snapshot.pid,
             port: snapshot.port,
             protocolName: "TCP",
-            icon: icon,
-            state: .listening,
             user: snapshot.user,
-            command: snapshot.processName,
             addresses: snapshot.addresses,
             isReadOnly: snapshot.isReadOnly,
             ownerLabel: snapshot.ownerLabel
@@ -577,9 +471,6 @@ final class PortViewModel: ObservableObject {
         let liveIDs = Set(ports.map(\.id))
         selectedPortIDs = selectedPortIDs.intersection(liveIDs)
 
-        if let selectedPortID, !liveIDs.contains(selectedPortID) {
-            self.selectedPortID = ports.first?.id
-        }
     }
 
     private func configureAutoRefresh() {
