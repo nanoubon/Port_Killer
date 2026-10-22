@@ -3,22 +3,18 @@ import Darwin
 import Foundation
 import ServiceManagement
 
-struct PortScanSnapshot: Sendable, Hashable {
-    let processName: String
-    let pid: String
-    let user: String
-    let port: String
-}
-
 actor PortScanService {
     enum ScanError: LocalizedError {
         case unavailable
+        case timedOut
         case commandFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .unavailable:
                 return "Unable to run the lsof scan."
+            case .timedOut:
+                return "lsof did not respond in time."
             case .commandFailed(let message):
                 return message
             }
@@ -30,55 +26,32 @@ actor PortScanService {
 
         guard let result = ShellHelper.executeCommand(
             command: "/usr/sbin/lsof",
-            arguments: ["-iTCP", "-sTCP:LISTEN", "-P", "-n"]
+            arguments: ["-iTCP", "-sTCP:LISTEN", "-P", "-n", "+c", "0", "-F", "pcLun"]
         ) else {
             throw ScanError.unavailable
         }
+        try Task.checkCancellation()
 
-        guard result.succeeded else {
+        if result.timedOut {
+            throw ScanError.timedOut
+        }
+
+        let stdoutEmpty = result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let stderrEmpty = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        // lsof exits 1 with no output when nothing matches: that is "no listeners", not a failure.
+        if result.exitStatus == 1, stdoutEmpty, stderrEmpty {
+            return []
+        }
+
+        // lsof also exits 1 when it printed results but warned about some items; keep the results.
+        guard result.succeeded || (result.exitStatus == 1 && !stdoutEmpty) else {
             let fallback = "lsof exited with status \(result.exitStatus)."
             let message = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
             throw ScanError.commandFailed(message.isEmpty ? fallback : message)
         }
 
-        return Self.parse(result.standardOutput)
-    }
-
-    private static func parse(_ output: String) -> [PortScanSnapshot] {
-        let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        guard lines.count > 1 else { return [] }
-
-        var parsed: [PortScanSnapshot] = []
-        var seen = Set<String>()
-
-        for line in lines.dropFirst() {
-            let columns = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            guard columns.count >= 9 else { continue }
-
-            let processName = columns[0]
-            let pid = columns[1]
-            let user = columns[2]
-            let nameColumn = columns[8]
-
-            guard let portRange = nameColumn.range(of: ":\\d+", options: .regularExpression) else {
-                continue
-            }
-
-            let port = String(nameColumn[portRange].dropFirst())
-            let key = "\(port)-\(pid)-\(processName)"
-            guard seen.insert(key).inserted else { continue }
-
-            parsed.append(
-                PortScanSnapshot(
-                    processName: processName,
-                    pid: pid,
-                    user: user,
-                    port: port
-                )
-            )
-        }
-
-        return parsed
+        return LsofParser.parse(result.standardOutput)
     }
 }
 

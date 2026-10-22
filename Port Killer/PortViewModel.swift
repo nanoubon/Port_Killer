@@ -19,6 +19,8 @@ final class PortViewModel: ObservableObject {
     @Published var debugMessage: String = "Initializing..."
     @Published var lastRefreshAt: Date?
     @Published var hasLoadedLivePorts: Bool = false
+    /// Non-nil when the last scan failed, so the UI does not present a failure as "no ports".
+    @Published var scanError: String?
     @Published var pendingKill: KillRequest?
     @Published var pendingForceKill: KillRequest?
     @Published var resultBanner: String?
@@ -448,8 +450,12 @@ final class PortViewModel: ObservableObject {
 
         ports = snapshots
             .map(makePortItem(from:))
-            .sorted { (Int($0.port) ?? 0) < (Int($1.port) ?? 0) }
+            .sorted {
+                let (a, b) = (Int($0.port) ?? 0, Int($1.port) ?? 0)
+                return a != b ? a < b : (Int($0.pid) ?? 0) < (Int($1.pid) ?? 0)
+            }
         hasLoadedLivePorts = true
+        scanError = nil
         reconcileSelection()
 
         debugMessage = ports.isEmpty
@@ -462,6 +468,7 @@ final class PortViewModel: ObservableObject {
 
         ports = []
         hasLoadedLivePorts = true
+        scanError = error.localizedDescription
         reconcileSelection()
         debugMessage = error.localizedDescription
     }
@@ -477,7 +484,8 @@ final class PortViewModel: ObservableObject {
             icon: icon,
             state: .listening,
             user: snapshot.user,
-            command: snapshot.processName
+            command: snapshot.processName,
+            addresses: snapshot.addresses
         )
     }
 

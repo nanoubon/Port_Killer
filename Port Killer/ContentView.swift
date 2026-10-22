@@ -558,11 +558,13 @@ struct EmptyTablePlaceholder: View {
                 .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(Color.pkMuted)
 
-            Text(viewModel.searchText.isEmpty ? "No active listening ports found." : "No matching ports.")
+            Text(viewModel.scanError != nil
+                 ? "Scan failed."
+                 : (viewModel.searchText.isEmpty ? "No active listening ports found." : "No matching ports."))
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.pkText)
 
-            Text(viewModel.debugMessage)
+            Text(viewModel.scanError ?? viewModel.debugMessage)
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(Color.pkMuted)
                 .multilineTextAlignment(.center)

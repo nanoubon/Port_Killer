@@ -73,6 +73,8 @@ struct PortItem: Identifiable, Hashable {
     var command: String?
     var uptime: String?
     var loadDescription: String?
+    /// Bind addresses (merged IPv4 + IPv6), e.g. ["*"] or ["127.0.0.1", "::1"].
+    var addresses: [String]
 
     var id: String {
         "\(port)-\(pid)-\(processName)"
@@ -88,7 +90,8 @@ struct PortItem: Identifiable, Hashable {
         user: String? = nil,
         command: String? = nil,
         uptime: String? = nil,
-        loadDescription: String? = nil
+        loadDescription: String? = nil,
+        addresses: [String] = []
     ) {
         self.processName = processName
         self.pid = pid
@@ -100,6 +103,7 @@ struct PortItem: Identifiable, Hashable {
         self.command = command
         self.uptime = uptime
         self.loadDescription = loadDescription
+        self.addresses = addresses
     }
 
     func hash(into hasher: inout Hasher) {
