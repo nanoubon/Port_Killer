@@ -22,10 +22,10 @@ A native macOS menu bar app that shows which process is holding a TCP port and l
 
 ## Install
 
-The first release is an unsigned, not notarized `.zip`. macOS Gatekeeper blocks it on first launch.
+The first release is unsigned and not notarized, as a `.dmg` or a `.zip`. macOS Gatekeeper blocks it on first launch.
 
-1. Download the `.zip` from the GitHub Releases page and unzip it.
-2. Move `Port Killer.app` to `/Applications`.
+1. Download the `.dmg` (or `.zip`) from the GitHub Releases page and open it.
+2. Drag `Port Killer.app` to `/Applications` (the `.dmg` window has a shortcut to it).
 3. Open it once with one of these methods:
    - Right-click (or Control-click) the app, choose **Open**, then click **Open** in the dialog.
    - Or double-click the app, then open **System Settings › Privacy & Security**, scroll to the Security section, and click **Open Anyway**.
@@ -70,7 +70,7 @@ Tests cover the lsof and netstat parsers, kill safety rules, and pin logic. Fixt
 
 `scripts/release.sh` runs the tests, builds a Release app (hardened runtime; universal arm64 + x86_64 when the toolchain supports it), signs it, and writes the artifact and its SHA-256 to `dist/`. It publishes nothing.
 
-- Default: ad-hoc signed, not notarized `Port-Killer-<version>-unsigned.zip`.
+- Default: ad-hoc signed, not notarized `Port-Killer-<version>-unsigned.zip` and `Port-Killer-<version>-unsigned.dmg`.
 - With a "Developer ID Application" identity in the keychain and `NOTARY_PROFILE` set (a `notarytool` keychain profile name): signed, notarized, stapled `Port-Killer-<version>.dmg`.
 
 ```bash

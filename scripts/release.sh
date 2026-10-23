@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Port Killer local release script. Builds, signs and packages the app.
 #
-#   Mode A (default, no Developer ID / no NOTARY_PROFILE): ad-hoc signed, NOT notarized .zip
+#   Mode A (default, no Developer ID / no NOTARY_PROFILE): ad-hoc signed, NOT notarized .zip and .dmg
 #   Mode B (Developer ID identity + NOTARY_PROFILE env): signed, notarized, stapled .dmg
 #
 # Usage: scripts/release.sh [--version X.Y.Z] [--out DIR] [--notarize] [--dry-run]
@@ -122,34 +122,47 @@ else
   run codesign --force --deep --options runtime --timestamp -s "$DEV_ID" "$APP_PATH"
 fi
 
+# Drag-to-install disk image: the app next to an /Applications link.
+make_dmg() {
+  local dmg="$1" stage="$WORK_DIR/dmg-staging"
+  run rm -f "$dmg"
+  run rm -rf "$stage"
+  run mkdir -p "$stage"
+  run ditto "$APP_PATH" "$stage/$APP_NAME.app"
+  run ln -s /Applications "$stage/Applications"
+  run hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$stage" -ov -format UDZO "$dmg"
+  run hdiutil verify -quiet "$dmg"
+}
+
 echo "== 4/4 Package"
+ARTIFACTS=()
 if [[ "$MODE" == "A" ]]; then
-  ARTIFACT="$OUT_DIR/$ZIP_PREFIX-$VERSION-unsigned.zip"
-  run rm -f "$ARTIFACT"
-  run ditto -c -k --keepParent "$APP_PATH" "$ARTIFACT"
+  ZIP="$OUT_DIR/$ZIP_PREFIX-$VERSION-unsigned.zip"
+  run rm -f "$ZIP"
+  run ditto -c -k --keepParent "$APP_PATH" "$ZIP"
+  DMG="$OUT_DIR/$ZIP_PREFIX-$VERSION-unsigned.dmg"
+  make_dmg "$DMG"
+  ARTIFACTS=("$ZIP" "$DMG")
 else
-  ARTIFACT="$OUT_DIR/$ZIP_PREFIX-$VERSION.dmg"
-  STAGE="$WORK_DIR/dmg-staging"
-  run rm -f "$ARTIFACT"
-  run mkdir -p "$STAGE"
-  run ditto "$APP_PATH" "$STAGE/$APP_NAME.app"
-  run ln -s /Applications "$STAGE/Applications"
-  run hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ARTIFACT"
-  run codesign --force --timestamp -s "$DEV_ID" "$ARTIFACT"
-  run xcrun notarytool submit "$ARTIFACT" --wait --keychain-profile "${NOTARY_PROFILE:-<NOTARY_PROFILE>}"
-  run xcrun stapler staple "$ARTIFACT"
-  run spctl --assess -vv --type open --context context:primary-signature "$ARTIFACT"
+  DMG="$OUT_DIR/$ZIP_PREFIX-$VERSION.dmg"
+  make_dmg "$DMG"
+  run codesign --force --timestamp -s "$DEV_ID" "$DMG"
+  run xcrun notarytool submit "$DMG" --wait --keychain-profile "${NOTARY_PROFILE:-<NOTARY_PROFILE>}"
+  run xcrun stapler staple "$DMG"
+  run spctl --assess -vv --type open --context context:primary-signature "$DMG"
+  ARTIFACTS=("$DMG")
 fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  echo "== Dry run finished. Would produce: $ARTIFACT"
+  echo "== Dry run finished. Would produce: ${ARTIFACTS[*]}"
   exit 0
 fi
 
-SHA="$(shasum -a 256 "$ARTIFACT" | awk '{print $1}')"
 echo
-echo "Artifact: $ARTIFACT"
-echo "SHA-256:  $SHA"
+for ARTIFACT in "${ARTIFACTS[@]}"; do
+  echo "Artifact: $ARTIFACT"
+  echo "SHA-256:  $(shasum -a 256 "$ARTIFACT" | awk '{print $1}')"
+done
 
 if [[ "$MODE" == "A" ]]; then
   cat <<'NOTICE'
@@ -165,4 +178,4 @@ fi
 
 echo
 echo "Nothing was published. To publish manually (hint only, not executed):"
-echo "  gh release create v$VERSION \"$ARTIFACT\" --title \"Port Killer $VERSION\" --notes-file CHANGELOG.md"
+echo "  gh release create v$VERSION$(printf ' "%s"' "${ARTIFACTS[@]}") --title \"Port Killer $VERSION\" --notes-file CHANGELOG.md"

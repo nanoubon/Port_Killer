@@ -37,7 +37,7 @@ Data flows one way: shell, then service actors, then the view model, then the Sw
 - **`AppActivation.swift`**: tracks main/Settings windows by `ObjectIdentifier` (registered by `WindowAccessor`, removed on `willClose`) and derives the activation policy from whether the set is empty (`.regular` / `.accessory`).
 - **`Views/`**: `MainWindowView` (SwiftUI `Table`, search, toolbar), `MenuBarPopoverView`, `SettingsView` (Start at login, refresh interval, version, GitHub link), `PortActionsMenu` (shared context menu: kill, copy PID/port, pin, copy `sudo kill`, Activity Monitor; `TagLabel`). `Components` holds shared visuals: `ProcessIconView` (app bundle icon or category symbol, cached by `ProcessIcon`), `PortBadge` (`PortRange` tint), `AddressScope`, `StatChip`, `PortSummaryBar`, `SettingsIcon`. Use system colors and fonts; there is no custom color palette.
 - **Tests**: `Port KillerTests/` (`LsofParserTests`, `NetstatParserTests`, `KillSafetyTests`, `PinStoreTests`) with fixtures in `Fixtures/`. UI is not unit-tested.
-- **Release**: `scripts/release.sh` (see `--help`; `--dry-run` prints steps). Ad-hoc `.zip` by default; Developer ID + notarized `.dmg` when an identity and `NOTARY_PROFILE` exist. Output goes to `dist/`. Team ID in the project is `F74446W6S9`.
+- **Release**: `scripts/release.sh` (see `--help`; `--dry-run` prints steps). Ad-hoc `.zip` and `.dmg` by default; Developer ID + notarized `.dmg` when an identity and `NOTARY_PROFILE` exist. Output goes to `dist/`. Team ID in the project is `F74446W6S9`.
 - **Docs**: `README.md`, `CHANGELOG.md`, and the design spec `docs/superpowers/specs/2026-10-23-simplify-for-github-design.md`. Some UI strings are still Thai.
 
 ## Design references
