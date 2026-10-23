@@ -18,7 +18,7 @@ struct PortActionsMenu: View {
             Divider()
         } else if rows.contains(where: \.isReadOnly) {
             // Shown disabled instead of omitted, so the reason is discoverable.
-            Button("Kill (ต้องใช้ sudo)", role: .destructive) {}
+            Button("Kill (requires sudo)", role: .destructive) {}
                 .disabled(true)
             Divider()
         }
@@ -31,12 +31,12 @@ struct PortActionsMenu: View {
         if rows.count == 1, let row = rows.first {
             Button(row.isPinned ? "Unpin" : "Pin") { viewModel.togglePin(row) }
             if let item = row.item, row.isReadOnly {
-                Button("คัดลอกคำสั่ง sudo kill \(item.pid)") { viewModel.copySudoKillCommand(for: item, origin: origin) }
+                Button("Copy sudo kill \(item.pid)") { viewModel.copySudoKillCommand(for: item, origin: origin) }
             }
         }
         if !running.isEmpty {
             Divider()
-            Button("เปิด Activity Monitor") { PortActionsMenu.showInActivityMonitor() }
+            Button("Open Activity Monitor") { PortActionsMenu.showInActivityMonitor() }
         }
     }
 
@@ -44,7 +44,7 @@ struct PortActionsMenu: View {
         guard !values.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(values.joined(separator: "\n"), forType: .string)
-        viewModel.showBanner("คัดลอก \(label) แล้ว: \(values.joined(separator: ", "))", origin: origin)
+        viewModel.showBanner("Copied \(label): \(values.joined(separator: ", "))", origin: origin)
     }
 
     static func showInActivityMonitor() {
@@ -66,7 +66,7 @@ struct PortRowAccessibilityActions: ViewModifier {
                 Button("Kill") { viewModel.killPorts(ids: [row.id], origin: origin) }
             }
             if let item = row.item, row.isReadOnly {
-                Button("คัดลอกคำสั่ง sudo kill \(item.pid)") { viewModel.copySudoKillCommand(for: item, origin: origin) }
+                Button("Copy sudo kill \(item.pid)") { viewModel.copySudoKillCommand(for: item, origin: origin) }
             }
             Button(row.isPinned ? "Unpin" : "Pin") { viewModel.togglePin(row) }
             if row.isRunning {
@@ -83,7 +83,7 @@ extension View {
     }
 }
 
-/// Small capsule label (owner of a read-only row, "Docker", "ไม่ได้รัน").
+/// Small capsule label (owner of a read-only row, "Docker", "Not running").
 struct TagLabel: View {
     let text: String
     init(_ text: String) { self.text = text }

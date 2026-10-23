@@ -29,19 +29,19 @@ struct PortRow: Identifiable, Hashable {
     var isDocker: Bool { KillSafety.isDocker(processName: processName) }
 
     /// Spoken text for a placeholder dash.
-    static func spoken(_ text: String) -> String { text == "—" ? "ไม่มี" : text }
+    static func spoken(_ text: String) -> String { text == "—" ? "none" : text }
 
     /// Full VoiceOver label for a combined row.
     var accessibilitySummary: String {
         var parts = ["Port \(port)", processName]
         if isRunning {
             parts.append("PID \(pid)")
-            parts.append("ผู้ใช้ \(Self.spoken(userText))")
+            parts.append("User \(Self.spoken(userText))")
         }
         if isDocker { parts.append("Docker") }
         if isPinned { parts.append("Pinned") }
-        if isReadOnly { parts.append("อ่านอย่างเดียว") }
-        if !isRunning { parts.append("ไม่ได้รัน") }
+        if isReadOnly { parts.append("Read-only") }
+        if !isRunning { parts.append("Not running") }
         return parts.joined(separator: ", ")
     }
 }

@@ -32,7 +32,7 @@ final class PortViewModel: ObservableObject {
         static let mainWindow = "main"
     }
 
-    static let readOnlyMessage = "process ของ root/user อื่น ปิดจากแอปนี้ไม่ได้ ใช้ sudo kill ในเทอร์มินัล"
+    static let readOnlyMessage = "This process belongs to root or another user and can't be killed from this app. Use sudo kill in Terminal."
 
     private var pendingExpiryTask: Task<Void, Never>?
     private var expiryPaused = false
@@ -133,7 +133,7 @@ final class PortViewModel: ObservableObject {
     func killProcess(pid: String, port: PortItem? = nil, origin: KillOrigin = .mainWindow) {
         let candidate = port ?? ports.first { $0.pid == pid }
         guard let candidate else {
-            showBanner("ไม่พบ process ที่เลือก", origin: origin)
+            showBanner("The selected process was not found.", origin: origin)
             return
         }
         requestKill([candidate], origin: origin)
@@ -144,7 +144,7 @@ final class PortViewModel: ObservableObject {
         guard let pid = Int32(port.pid), pid > 1 else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("sudo kill \(pid)", forType: .string)
-        showBanner("คัดลอก sudo kill \(pid) แล้ว", origin: origin)
+        showBanner("Copied sudo kill \(pid)", origin: origin)
     }
 
     /// Kill request for specific rows (context menu). Read-only and unknown ids are dropped by `requestKill`.
@@ -158,7 +158,7 @@ final class PortViewModel: ObservableObject {
         let items = selectedPorts
         guard !items.isEmpty else {
             let onlyReadOnly = ports.contains { selectedPortIDs.contains($0.id) && $0.isReadOnly }
-            showBanner(onlyReadOnly ? Self.readOnlyMessage : "เลือกอย่างน้อยหนึ่งรายการก่อน", origin: origin)
+            showBanner(onlyReadOnly ? Self.readOnlyMessage : "Select at least one port first.", origin: origin)
             return
         }
         requestKill(items, origin: origin)
@@ -166,7 +166,7 @@ final class PortViewModel: ObservableObject {
 
     private func requestKill(_ candidates: [PortItem], origin: KillOrigin) {
         guard hasLoadedLivePorts else {
-            showBanner("ยังไม่ได้สแกน port", origin: origin)
+            showBanner("Ports haven't been scanned yet.", origin: origin)
             return
         }
         // Defense in depth: read-only (root / other user) rows can never be killed from the app,
@@ -182,7 +182,7 @@ final class PortViewModel: ObservableObject {
             isReadOnly(candidate) ? nil : ports.first { $0.id == candidate.id }
         }
         guard !live.isEmpty else {
-            if !candidates.contains(where: isReadOnly) { showBanner("process นี้ไม่อยู่ในรายการแล้ว", origin: origin) }
+            if !candidates.contains(where: isReadOnly) { showBanner("This process is no longer listed.", origin: origin) }
             return
         }
 
@@ -221,9 +221,9 @@ final class PortViewModel: ObservableObject {
         }
 
         if refusedSelf {
-            showBanner("ไม่สามารถปิด Port Killer เองได้", origin: origin)
+            showBanner("Port Killer can't kill itself.", origin: origin)
         } else if refusedUnverifiable && entries.isEmpty {
-            showBanner("ตรวจสอบ process ไม่ได้ (อาจปิดไปแล้ว)", origin: origin)
+            showBanner("Couldn't verify the process (it may have already exited).", origin: origin)
         }
         guard !entries.isEmpty else { return }
         setPending(kill: KillRequest(origin: origin, entries: entries), force: nil)
@@ -254,7 +254,7 @@ final class PortViewModel: ObservableObject {
         pendingKill = nil
         pendingForceKill = nil
         pendingExpiryTask = nil
-        showBanner("คำขอปิด process หมดเวลาแล้ว ไม่มีการส่งสัญญาณ", origin: origin)
+        showBanner("The kill request expired. No signal was sent.", origin: origin)
     }
 
     /// The panel calls this with `true` while any of its controls has focus: the 30 s clock stops
@@ -399,11 +399,11 @@ final class PortViewModel: ObservableObject {
         do {
             try launchAtLoginService.setEnabled(enabled)
         } catch {
-            launchAtLoginMessage = "ตั้งค่า Start at login ไม่สำเร็จ: \(error.localizedDescription)"
+            launchAtLoginMessage = "Couldn't change Start at login: \(error.localizedDescription)"
         }
         refreshLaunchAtLoginStatus()
         if launchAtLoginStatus == .requiresApproval {
-            launchAtLoginMessage = "ต้องอนุมัติใน System Settings › General › Login Items"
+            launchAtLoginMessage = "Approve Port Killer in System Settings › General › Login Items."
         }
     }
 
@@ -488,7 +488,7 @@ final class PortViewModel: ObservableObject {
                 let snapshots = try await portScanService.scanListeningPorts()
                 listening = Set(snapshots.map { "\($0.pid)-\($0.port)" })
             } catch {
-                messages.append("ข้าม \(label): ตรวจสอบก่อนปิดไม่สำเร็จ")
+                messages.append("Skipped \(label): the pre-kill check failed")
                 continue
             }
 
@@ -500,11 +500,11 @@ final class PortViewModel: ObservableObject {
                 stillListeningOnPort: { pid, port in listening.contains("\(pid)-\(port)") }
             )
             guard valid, let pid = Int32(item.pid) else {
-                messages.append("ข้าม \(label): process เปลี่ยนไปหรือปิดไปแล้ว")
+                messages.append("Skipped \(label): the process changed or already exited")
                 continue
             }
             guard pid != ProcessInfo.processInfo.processIdentifier else {
-                messages.append("ไม่สามารถปิด Port Killer เองได้")
+                messages.append("Port Killer can't kill itself.")
                 continue
             }
             guard killInFlightPIDs.insert(item.pid).inserted else { continue }
@@ -518,20 +518,20 @@ final class PortViewModel: ObservableObject {
 
             switch outcome {
             case .terminated:
-                messages.append("ปิด \(label) แล้ว")
+                messages.append("Killed \(label)")
             case .stillRunning:
                 if force {
-                    messages.append("\(label) ยังไม่ปิดแม้ส่ง SIGKILL")
+                    messages.append("\(label) is still running after SIGKILL")
                 } else {
-                    messages.append("\(label) ยังไม่ปิดหลังรอ 3 วินาที")
+                    messages.append("\(label) is still running after 3 seconds")
                     needForce.append(entry)
                 }
             case .notPermitted:
-                messages.append("ไม่มีสิทธิ์ปิด process ของ \(KillSafety.sanitizeForDisplay(item.user ?? "user อื่น", limit: 16))")
+                messages.append("No permission to kill a process owned by \(KillSafety.sanitizeForDisplay(item.user ?? "another user", limit: 16))")
             case .alreadyGone:
-                messages.append("process ปิดไปก่อนแล้ว (\(label))")
+                messages.append("\(label) had already exited")
             case .failed(let code):
-                messages.append("ปิด \(label) ไม่สำเร็จ (errno \(code))")
+                messages.append("Couldn't kill \(label) (errno \(code))")
             }
             selectedPortIDs.remove(item.id)
         }

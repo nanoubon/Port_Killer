@@ -92,7 +92,6 @@ The app runs `/usr/sbin/lsof` and `/usr/sbin/netstat` to list listeners and send
 
 - TCP listeners only. UDP is not shown.
 - Root and other-user processes are listed read-only. Use the copied `sudo kill` command in a terminal.
-- Some interface text is currently in Thai.
 
 ## Project structure
 

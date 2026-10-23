@@ -24,7 +24,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Port Killer")
                     .font(.title2.weight(.semibold))
-                Text("เวอร์ชัน \(version)")
+                Text("Version \(version)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -41,7 +41,7 @@ struct SettingsView: View {
                 appHeader
             }
 
-            Section("ทั่วไป") {
+            Section("General") {
                 Toggle(isOn: Binding(
                     get: { viewModel.isLaunchAtLoginEnabled },
                     set: { viewModel.setLaunchAtLogin($0) }
@@ -54,38 +54,38 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 if viewModel.launchAtLoginStatus == .requiresApproval {
-                    Button("เปิด Login Items…") { viewModel.openLoginItemsSettings() }
+                    Button("Open Login Items…") { viewModel.openLoginItemsSettings() }
                 }
             }
 
-            Section("การรีเฟรช") {
+            Section("Refresh") {
                 Toggle(isOn: Binding(
                     get: { viewModel.isAutoRefreshEnabled },
                     set: { viewModel.setAutoRefreshEnabled($0) }
                 )) {
-                    Label { Text("รีเฟรชอัตโนมัติ") } icon: { SettingsIcon("arrow.clockwise", color: .blue) }
+                    Label { Text("Auto refresh") } icon: { SettingsIcon("arrow.clockwise", color: .blue) }
                 }
                 Stepper(value: Binding(
                     get: { Int(viewModel.refreshIntervalSeconds) },
                     set: { viewModel.setRefreshIntervalSeconds(Double($0)) }
                 ), in: 3...60) {
                     LabeledContent {
-                        Text("\(Int(viewModel.refreshIntervalSeconds)) วินาที")
+                        Text("\(Int(viewModel.refreshIntervalSeconds)) seconds")
                             .monospacedDigit()
                     } label: {
-                        Label { Text("ทุก") } icon: { SettingsIcon("timer", color: .orange) }
+                        Label { Text("Interval") } icon: { SettingsIcon("timer", color: .orange) }
                     }
                 }
                 .disabled(!viewModel.isAutoRefreshEnabled)
-                Text("รีเฟรชเฉพาะตอนที่ popover หรือหน้าต่างหลักเปิดอยู่")
+                Text("Refreshes only while the popover or main window is open.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("เกี่ยวกับ") {
+            Section("About") {
                 LabeledContent {
                     Link(destination: Self.repositoryURL) {
-                        Label("เปิดใน GitHub", systemImage: "arrow.up.right.square")
+                        Label("View on GitHub", systemImage: "arrow.up.right.square")
                     }
                 } label: {
                     Label { Text("Source code") } icon: { SettingsIcon("chevron.left.forwardslash.chevron.right", color: .gray) }

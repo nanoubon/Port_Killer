@@ -39,7 +39,7 @@ struct MenuBarPopoverView: View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("ค้นหา port, process, PID", text: $searchText)
+                TextField("Search port, process, PID", text: $searchText)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .accessibilityLabel("Search ports")
@@ -54,7 +54,7 @@ struct MenuBarPopoverView: View {
                     .frame(minWidth: 24, minHeight: 24)
                     .contentShape(Rectangle())
                     .accessibilityLabel("Clear search")
-                    .help("ล้างคำค้นหา")
+                    .help("Clear search")
                 }
             }
             .padding(.horizontal, 8)
@@ -72,7 +72,7 @@ struct MenuBarPopoverView: View {
             .frame(minWidth: 24, minHeight: 24)
             .contentShape(Rectangle())
             .accessibilityLabel("Refresh ports")
-            .help("สแกน port ใหม่")
+            .help("Rescan ports")
         }
         .padding(10)
     }
@@ -81,19 +81,19 @@ struct MenuBarPopoverView: View {
     private func list(_ rows: [PortRow]) -> some View {
         Group {
             if !viewModel.hasLoadedLivePorts {
-                ProgressView("กำลังสแกน port…")
+                ProgressView("Scanning ports…")
                     .controlSize(.small)
             } else if let error = viewModel.scanError {
                 ContentUnavailableView {
-                    Label("สแกน port ไม่สำเร็จ", systemImage: "exclamationmark.triangle")
+                    Label("Couldn't scan ports", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
                 } actions: {
-                    Button("ลองอีกครั้ง") { viewModel.refresh() }
+                    Button("Try Again") { viewModel.refresh() }
                 }
             } else if rows.isEmpty {
                 if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-                    ContentUnavailableView("ไม่มี port ที่กำลังฟังอยู่", systemImage: "network.slash")
+                    ContentUnavailableView("No listening ports", systemImage: "network.slash")
                 } else {
                     ContentUnavailableView.search(text: searchText)
                 }
@@ -124,26 +124,26 @@ struct MenuBarPopoverView: View {
             Button {
                 AppActivation.openMainWindow(openWindow)
             } label: {
-                Label("เปิดหน้าต่าง", systemImage: "macwindow")
+                Label("Open Window", systemImage: "macwindow")
             }
             .keyboardShortcut("o")
-            .help("เปิดหน้าต่างหลัก (⌘O)")
+            .help("Open the main window (⌘O)")
 
             Spacer()
 
             Button {
                 AppActivation.openSettings(openSettings)
             } label: {
-                Label("ตั้งค่า", systemImage: "gearshape")
+                Label("Settings", systemImage: "gearshape")
             }
             .keyboardShortcut(",")
-            .help("เปิดการตั้งค่า (⌘,)")
+            .help("Open Settings (⌘,)")
 
             Button { viewModel.quitApp() } label: {
-                Label("ออก", systemImage: "power")
+                Label("Quit", systemImage: "power")
             }
                 .keyboardShortcut("q")
-                .help("ออกจาก Port Killer (⌘Q)")
+                .help("Quit Port Killer (⌘Q)")
         }
         .buttonStyle(.borderless)
         .labelStyle(.titleAndIcon)
@@ -191,7 +191,7 @@ private struct MenuPortRow: View {
                             TagLabel("Docker")
                         }
                     } else {
-                        Text("ไม่ได้รัน")
+                        Text("Not running")
                     }
                 }
                 .font(.caption)
@@ -224,15 +224,15 @@ private struct MenuPortRow: View {
             Image(systemName: "lock.fill")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .help("อ่านอย่างเดียว: เป็นของ \(row.ownerLabel ?? "ผู้ใช้อื่น")")
+                .help("Read-only: owned by \(row.ownerLabel ?? "another user")")
             Button { viewModel.copySudoKillCommand(for: item, origin: .menuBar) } label: {
                 Image(systemName: "doc.on.doc")
             }
             .buttonStyle(.borderless)
             .frame(minWidth: 24, minHeight: 24)
             .contentShape(Rectangle())
-            .accessibilityLabel("คัดลอกคำสั่ง sudo kill \(item.pid)")
-            .help("คัดลอกคำสั่ง sudo kill \(item.pid)")
+            .accessibilityLabel("Copy sudo kill \(item.pid)")
+            .help("Copy sudo kill \(item.pid)")
         } else if let item = row.item {
             Button {
                 viewModel.killProcess(pid: item.pid, port: item, origin: .menuBar)
@@ -244,7 +244,7 @@ private struct MenuPortRow: View {
             .frame(minWidth: 24, minHeight: 24)
             .contentShape(Rectangle())
             .accessibilityLabel("Kill \(row.processName) on port \(row.port)")
-            .help("ปิด \(row.processName) (port \(row.port))")
+            .help("Kill \(row.processName) (port \(row.port))")
         } else {
             Button { viewModel.unpin(row.bookmark) } label: {
                 Image(systemName: "pin.slash")
@@ -253,7 +253,7 @@ private struct MenuPortRow: View {
             .frame(minWidth: 24, minHeight: 24)
             .contentShape(Rectangle())
             .accessibilityLabel("Unpin \(row.processName) port \(row.port)")
-            .help("ยกเลิก pin")
+            .help("Unpin")
         }
     }
 }

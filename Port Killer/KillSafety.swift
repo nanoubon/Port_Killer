@@ -10,13 +10,13 @@ enum KillWarning: Hashable, Sendable {
     var message: String {
         switch self {
         case .docker:
-            return "เป็น Docker: จะหยุด container ทุกตัว"
+            return "Docker: killing it stops all containers"
         case .system:
-            return "เป็น process ของระบบ macOS: การปิดอาจทำให้บางฟีเจอร์ของระบบหยุดทำงาน"
+            return "macOS system process: killing it may break some system features"
         case .otherUser:
-            return "เป็น process ของ user อื่น: น่าจะไม่มีสิทธิ์ปิด"
+            return "Owned by another user: you probably don't have permission to kill it"
         case .selfProcess:
-            return "นี่คือ Port Killer เอง: ไม่อนุญาตให้ปิด"
+            return "This is Port Killer itself: it can't be killed"
         }
     }
 

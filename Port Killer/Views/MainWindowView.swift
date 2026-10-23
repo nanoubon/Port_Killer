@@ -31,7 +31,7 @@ struct MainWindowView: View {
             .frame(minWidth: 640, minHeight: 320)
             .navigationTitle("Port Killer")
             .navigationSubtitle(viewModel.hasLoadedLivePorts && viewModel.scanError == nil ? "\(viewModel.ports.count) ports" : "")
-            .searchable(text: $viewModel.searchText, placement: .toolbar, prompt: "ค้นหา port, process, PID")
+            .searchable(text: $viewModel.searchText, placement: .toolbar, prompt: "Search port, process, PID")
             .toolbar {
                 ToolbarItemGroup {
                     Button {
@@ -39,17 +39,17 @@ struct MainWindowView: View {
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
-                    .help("สแกน port ใหม่ (⌘R)")
+                    .help("Rescan ports (⌘R)")
                     .accessibilityLabel("Refresh ports")
 
                     Button(role: .destructive) {
                         viewModel.killSelectedPorts(origin: .mainWindow)
                     } label: {
-                        Label("Kill ที่เลือก (\(viewModel.selectedPorts.count))", systemImage: "xmark.circle")
+                        Label("Kill Selected (\(viewModel.selectedPorts.count))", systemImage: "xmark.circle")
                             .labelStyle(.titleAndIcon)
                     }
                     .disabled(viewModel.selectedPorts.isEmpty || viewModel.isPending(for: .mainWindow))
-                    .help("ปิด process ที่เลือก (ต้องยืนยันก่อน)")
+                    .help("Kill the selected processes (asks for confirmation)")
                 }
             }
             .killConfirmation(origin: .mainWindow)
@@ -64,22 +64,22 @@ struct MainWindowView: View {
     @ViewBuilder
     private func content(_ rows: [PortRow]) -> some View {
         if !viewModel.hasLoadedLivePorts {
-            ProgressView("กำลังสแกน port…")
+            ProgressView("Scanning ports…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = viewModel.scanError {
             ContentUnavailableView {
-                Label("สแกน port ไม่สำเร็จ", systemImage: "exclamationmark.triangle")
+                Label("Couldn't scan ports", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(error)
             } actions: {
-                Button("ลองอีกครั้ง") { viewModel.refresh() }
+                Button("Try Again") { viewModel.refresh() }
             }
         } else if rows.isEmpty {
             if viewModel.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                 ContentUnavailableView(
-                    "ไม่มี port ที่กำลังฟังอยู่",
+                    "No listening ports",
                     systemImage: "network.slash",
-                    description: Text("ไม่พบ TCP listener ในขณะนี้")
+                    description: Text("No TCP listeners right now.")
                 )
             } else {
                 ContentUnavailableView.search(text: viewModel.searchText)
@@ -115,7 +115,7 @@ struct MainWindowView: View {
                     )
                     Text(row.processName).lineLimit(1)
                     if row.isDocker { TagLabel("Docker") }
-                    if !row.isRunning { TagLabel("ไม่ได้รัน") }
+                    if !row.isRunning { TagLabel("Not running") }
                 }
                 .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
             }
@@ -138,8 +138,8 @@ struct MainWindowView: View {
                         Image(systemName: "lock.fill")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .help("อ่านอย่างเดียว: ปิดจากแอปนี้ไม่ได้")
-                            .accessibilityLabel("อ่านอย่างเดียว")
+                            .help("Read-only: can't be killed from this app")
+                            .accessibilityLabel("Read-only")
                     }
                 }
                 .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)

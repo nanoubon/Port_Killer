@@ -43,13 +43,13 @@ final class LifecycleTests: XCTestCase {
         let item = PortItem(processName: "node", pid: "42", port: "3000", user: "alice", isReadOnly: true, ownerLabel: "root")
         let row = PortRow(id: item.id, item: item, bookmark: PortBookmark(portItem: item), isPinned: true)
         let text = row.accessibilitySummary
-        for part in ["Port 3000", "node", "PID 42", "Pinned", "อ่านอย่างเดียว"] {
+        for part in ["Port 3000", "node", "PID 42", "Pinned", "Read-only"] {
             XCTAssertTrue(text.contains(part), part)
         }
         let gone = PortRow(id: "pin-x", item: nil, bookmark: PortBookmark(port: "5432", processName: "postgres"), isPinned: true)
-        XCTAssertTrue(gone.accessibilitySummary.contains("ไม่ได้รัน"))
+        XCTAssertTrue(gone.accessibilitySummary.contains("Not running"))
         XCTAssertFalse(gone.accessibilitySummary.contains("PID"))
-        XCTAssertEqual(PortRow.spoken("—"), "ไม่มี")
+        XCTAssertEqual(PortRow.spoken("—"), "none")
     }
 
     func testLsofExitOneWithEmptyStdoutIsNoListenersEvenWithStderr() throws {

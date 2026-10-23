@@ -116,9 +116,9 @@ enum PortRange {
 
     var help: String {
         switch self {
-        case .wellKnown: "พอร์ตระบบ (0–1023)"
-        case .registered: "พอร์ตทั่วไป (1024–49151)"
-        case .ephemeral: "พอร์ตชั่วคราว (49152 ขึ้นไป)"
+        case .wellKnown: "Well-known port (0–1023)"
+        case .registered: "Registered port (1024–49151)"
+        case .ephemeral: "Ephemeral port (49152 and up)"
         }
     }
 }
@@ -178,9 +178,9 @@ enum AddressScope {
 
     var help: String {
         switch self {
-        case .allInterfaces: "เปิดรับจากทุก interface (เครื่องอื่นในเครือข่ายเข้าถึงได้)"
-        case .loopback: "เฉพาะเครื่องนี้ (loopback)"
-        case .specific: "เฉพาะ interface ที่ระบุ"
+        case .allInterfaces: "Listens on all interfaces (reachable from other machines on the network)"
+        case .loopback: "This Mac only (loopback)"
+        case .specific: "Specific interface only"
         }
     }
 }
@@ -258,12 +258,12 @@ struct PortSummaryBar: View {
         HStack(spacing: compact ? 4 : 6) {
             StatChip(
                 symbol: "circle.fill", tint: .green, text: "\(live.count) listening",
-                help: viewModel.isAutoRefreshEnabled ? "รีเฟรชอัตโนมัติทุก \(Int(viewModel.refreshIntervalSeconds)) วินาที" : "รีเฟรชอัตโนมัติปิดอยู่",
+                help: viewModel.isAutoRefreshEnabled ? "Auto refresh every \(Int(viewModel.refreshIntervalSeconds)) seconds" : "Auto refresh is off",
                 pulses: viewModel.isAutoRefreshEnabled, compact: compact
             )
             if exposed > 0 {
-                StatChip(symbol: "globe", tint: .orange, text: compact ? "\(exposed)" : "\(exposed) เปิดสู่เครือข่าย",
-                         help: AddressScope.allInterfaces.help, spokenText: "\(exposed) เปิดสู่เครือข่าย", compact: compact)
+                StatChip(symbol: "globe", tint: .orange, text: compact ? "\(exposed)" : "\(exposed) exposed",
+                         help: AddressScope.allInterfaces.help, spokenText: "\(exposed) exposed", compact: compact)
             }
             if pinned > 0 {
                 StatChip(symbol: "pin.fill", tint: .yellow, text: compact ? "\(pinned)" : "\(pinned) pinned",
@@ -274,16 +274,16 @@ struct PortSummaryBar: View {
                          help: "Docker", spokenText: "\(docker) Docker", compact: compact)
             }
             if readOnly > 0 {
-                StatChip(symbol: "lock.fill", tint: .secondary, text: compact ? "\(readOnly)" : "\(readOnly) อ่านอย่างเดียว",
-                         help: "เป็นของ root หรือผู้ใช้อื่น ปิดจากแอปนี้ไม่ได้", spokenText: "\(readOnly) อ่านอย่างเดียว", compact: compact)
+                StatChip(symbol: "lock.fill", tint: .secondary, text: compact ? "\(readOnly)" : "\(readOnly) read-only",
+                         help: "Owned by root or another user; can't be killed from this app", spokenText: "\(readOnly) read-only", compact: compact)
             }
             Spacer(minLength: 4)
             if isFiltering {
-                Text(compact ? "\(shown)/\(all.count)" : "แสดง \(shown) จาก \(all.count)")
+                Text(compact ? "\(shown)/\(all.count)" : "Showing \(shown) of \(all.count)")
                     .font(compact ? .caption : .callout)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                    .accessibilityLabel("แสดง \(shown) จาก \(all.count)")
+                    .accessibilityLabel("Showing \(shown) of \(all.count)")
             }
         }
         .padding(.horizontal, compact ? 10 : 12)

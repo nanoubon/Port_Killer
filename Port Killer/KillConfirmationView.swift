@@ -25,9 +25,9 @@ private struct KillOverlayModifier: ViewModifier {
                 if let request = viewModel.pendingKill, request.origin == origin {
                     KillConfirmationPanel(
                         request: request,
-                        title: "ปิด process?",
-                        confirmTitle: "ปิด process",
-                        footnote: "ส่ง SIGTERM ก่อน รอสูงสุดประมาณ 3 วินาที",
+                        title: "Kill process?",
+                        confirmTitle: "Kill",
+                        footnote: "Sends SIGTERM first and waits up to about 3 seconds.",
                         onCancel: { viewModel.cancelPendingKill() },
                         onConfirm: { viewModel.confirmKill() },
                         onFocusChange: { viewModel.setPendingExpiryPaused($0) }
@@ -35,9 +35,9 @@ private struct KillOverlayModifier: ViewModifier {
                 } else if let request = viewModel.pendingForceKill, request.origin == origin {
                     KillConfirmationPanel(
                         request: request,
-                        title: "บังคับปิด (SIGKILL)?",
-                        confirmTitle: "บังคับปิด",
-                        footnote: "process เหล่านี้ยังไม่ปิดหลังรอ 3 วินาที SIGKILL จะหยุดทันทีโดยไม่ให้บันทึกข้อมูล",
+                        title: "Force kill (SIGKILL)?",
+                        confirmTitle: "Force Kill",
+                        footnote: "These processes are still running after 3 seconds. SIGKILL stops them immediately without letting them save data.",
                         isForce: true,
                         onCancel: { viewModel.cancelForceKill() },
                         onConfirm: { viewModel.confirmForceKill() },
@@ -83,8 +83,8 @@ private struct ResultBanner: View {
             .frame(minWidth: 24, minHeight: 24)
             .contentShape(Rectangle())
             .focused($dismissFocused)
-            .accessibilityLabel("ปิดข้อความ")
-            .help("ปิดข้อความ")
+            .accessibilityLabel("Dismiss message")
+            .help("Dismiss message")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -189,8 +189,8 @@ struct KillConfirmationPanel: View {
 
     private var announcement: String {
         let names = request.entries.map(\.displayName).joined(separator: ", ")
-        let warnings = uniqueWarnings.map { "คำเตือน: \($0.message)" }.joined(separator: ". ")
-        return [title, names, warnings, "ปุ่มยกเลิกถูกเลือกอยู่"].filter { !$0.isEmpty }.joined(separator: ". ")
+        let warnings = uniqueWarnings.map { "Warning: \($0.message)" }.joined(separator: ". ")
+        return [title, names, warnings, "Cancel button is selected"].filter { !$0.isEmpty }.joined(separator: ". ")
     }
 
     var body: some View {
@@ -221,7 +221,7 @@ struct KillConfirmationPanel: View {
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }
                                         .accessibilityElement(children: .combine)
-                                        .accessibilityLabel("คำเตือน: \(warning.message)")
+                                        .accessibilityLabel("Warning: \(warning.message)")
                                     }
                                 }
                                 .padding(10)
@@ -248,7 +248,7 @@ struct KillConfirmationPanel: View {
                     HStack {
                         Spacer()
                         // Cancel is the default action (Return) and takes initial focus.
-                        Button("ยกเลิก", action: onCancel)
+                        Button("Cancel", action: onCancel)
                             .keyboardShortcut(.defaultAction)
                             .focused($focus, equals: .cancel)
                         Button(role: .destructive, action: onConfirm) {
@@ -258,7 +258,7 @@ struct KillConfirmationPanel: View {
                             .tint(.red)
                             .focused($focus, equals: .confirm)
                             .disabled(!confirmEnabled)
-                            .accessibilityHint(confirmEnabled ? "" : "ปุ่มจะใช้งานได้ในอีกประมาณ 1 วินาที เพื่อป้องกันการกดพลาด")
+                            .accessibilityHint(confirmEnabled ? "" : "Available in about 1 second, to prevent accidental clicks")
                     }
                 }
                 .padding(18)
@@ -286,7 +286,7 @@ struct KillConfirmationPanel: View {
             guard isForce else { return }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             confirmEnabled = true
-            PortViewModel.announce("ปุ่ม \(confirmTitle) พร้อมใช้งานแล้ว")
+            PortViewModel.announce("\(confirmTitle) button is now available")
         }
     }
 

@@ -110,9 +110,9 @@ struct PortCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {}
         CommandMenu("Ports") {
-            Button("รีเฟรช") { viewModel.refresh() }
+            Button("Refresh") { viewModel.refresh() }
                 .keyboardShortcut("r")
-            Button("Kill ที่เลือก") { viewModel.killSelectedPorts(origin: .mainWindow) }
+            Button("Kill Selected") { viewModel.killSelectedPorts(origin: .mainWindow) }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(!(context?.canKill ?? false))
             Divider()
