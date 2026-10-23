@@ -65,6 +65,10 @@ private struct ResultBanner: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(.tint)
+                .font(.body)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.callout)
                 .foregroundStyle(.primary)
@@ -122,28 +126,65 @@ struct KillConfirmationPanel: View {
     }
 
     private var entryList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(request.entries) { entry in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(entry.displayName)
-                        .font(.body.weight(.semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let path = entry.path {
-                        Text(path)
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(request.entries.enumerated()), id: \.element.id) { index, entry in
+                if index > 0 { Divider().padding(.leading, 50) }
+                HStack(alignment: .top, spacing: 10) {
+                    ProcessIconView(
+                        processName: entry.displayName,
+                        path: entry.identity.path ?? entry.path,
+                        size: 30
+                    )
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(entry.displayName)
+                            .font(.body.weight(.semibold))
                             .lineLimit(1)
-                            .truncationMode(.middle)
+                            .truncationMode(.tail)
+                        if let path = entry.path {
+                            Text(path)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        HStack(spacing: 6) {
+                            PortBadge(port: KillSafety.sanitizeForDisplay(entry.item.port, limit: 8))
+                                .font(.caption)
+                            Text("PID \(KillSafety.sanitizeForDisplay(entry.item.pid, limit: 12))")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 1)
                     }
-                    Text("Port \(KillSafety.sanitizeForDisplay(entry.item.port, limit: 8)) · PID \(KillSafety.sanitizeForDisplay(entry.item.pid, limit: 12))")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(10)
                 .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(entry.displayName), Port \(KillSafety.sanitizeForDisplay(entry.item.port, limit: 8)), PID \(KillSafety.sanitizeForDisplay(entry.item.pid, limit: 12))")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.separator))
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isForce ? "bolt.trianglebadge.exclamationmark.fill" : "xmark.octagon.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background((isForce ? Color.red : Color.orange).gradient, in: Circle())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Text(request.entries.count == 1 ? "1 process" : "\(request.entries.count) processes")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var announcement: String {
@@ -155,7 +196,7 @@ struct KillConfirmationPanel: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Color.black.opacity(0.3)
+                Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .onTapGesture { }
                     .accessibilityHidden(true)
@@ -165,12 +206,10 @@ struct KillConfirmationPanel: View {
                     // space the surface offers; the buttons stay pinned below.
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(title)
-                                .font(.headline)
-                                .accessibilityAddTraits(.isHeader)
+                            header
 
                             if !uniqueWarnings.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 5) {
                                     ForEach(uniqueWarnings, id: \.self) { warning in
                                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                                             Image(systemName: "exclamationmark.triangle.fill")
@@ -185,11 +224,15 @@ struct KillConfirmationPanel: View {
                                         .accessibilityLabel("คำเตือน: \(warning.message)")
                                     }
                                 }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.orange.opacity(0.35)))
                             }
 
                             entryList
 
-                            Text(footnote)
+                            Label(footnote, systemImage: "info.circle")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -199,7 +242,7 @@ struct KillConfirmationPanel: View {
                             Color.clear.preference(key: PanelContentHeightKey.self, value: proxy.size.height)
                         })
                     }
-                    .frame(height: min(contentHeight, max(120, geo.size.height - 32 - 32 - 52)))
+                    .frame(height: min(contentHeight, max(120, geo.size.height - 36 - 32 - 52)))
                     .onPreferenceChange(PanelContentHeightKey.self) { contentHeight = $0 }
 
                     HStack {
@@ -208,7 +251,9 @@ struct KillConfirmationPanel: View {
                         Button("ยกเลิก", action: onCancel)
                             .keyboardShortcut(.defaultAction)
                             .focused($focus, equals: .cancel)
-                        Button(confirmTitle, role: .destructive, action: onConfirm)
+                        Button(role: .destructive, action: onConfirm) {
+                            Label(confirmTitle, systemImage: isForce ? "bolt.fill" : "xmark.circle")
+                        }
                             .buttonStyle(.bordered)
                             .tint(.red)
                             .focused($focus, equals: .confirm)
@@ -216,11 +261,11 @@ struct KillConfirmationPanel: View {
                             .accessibilityHint(confirmEnabled ? "" : "ปุ่มจะใช้งานได้ในอีกประมาณ 1 วินาที เพื่อป้องกันการกดพลาด")
                     }
                 }
-                .padding(16)
-                .frame(maxWidth: 360)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator))
-                .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                .padding(18)
+                .frame(maxWidth: 380)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator))
+                .shadow(color: .black.opacity(0.3), radius: 24, y: 10)
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityElement(children: .contain)

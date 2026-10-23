@@ -20,7 +20,14 @@ struct MainWindowView: View {
             && !viewModel.selectedPorts.isEmpty
             && !isEditingText
             && !viewModel.isPending(for: .mainWindow)
-        content(rows)
+        VStack(spacing: 0) {
+            if viewModel.hasLoadedLivePorts && viewModel.scanError == nil {
+                PortSummaryBar(shown: rows.count, query: viewModel.searchText)
+                    .background(.bar)
+                Divider()
+            }
+            content(rows)
+        }
             .frame(minWidth: 640, minHeight: 320)
             .navigationTitle("Port Killer")
             .navigationSubtitle(viewModel.hasLoadedLivePorts && viewModel.scanError == nil ? "\(viewModel.ports.count) ports" : "")
@@ -85,31 +92,34 @@ struct MainWindowView: View {
     private func table(_ rows: [PortRow]) -> some View {
         Table(rows, selection: $viewModel.selectedPortIDs, sortOrder: $sortOrder) {
             TableColumn("Port", value: \.portNumber) { row in
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
+                    PortBadge(port: row.port, isRunning: row.isRunning)
                     if row.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.yellow)
                     }
-                    Text(row.port)
-                        .font(.system(.body, design: .monospaced))
                 }
-                .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(row.isPinned ? "Port \(row.port), Pinned" : "Port \(row.port)")
                 .portRowAccessibilityActions(row, origin: .mainWindow)
             }
-            .width(min: 80, ideal: 90)
+            .width(min: 90, ideal: 100)
 
             TableColumn("Process", value: \.processName) { row in
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
+                    ProcessIconView(
+                        processName: row.processName,
+                        path: row.item.flatMap { ProcessIcon.executablePath(pid: $0.pid, processName: $0.processName) },
+                        isRunning: row.isRunning
+                    )
                     Text(row.processName).lineLimit(1)
                     if row.isDocker { TagLabel("Docker") }
                     if !row.isRunning { TagLabel("ไม่ได้รัน") }
                 }
                 .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
             }
-            .width(min: 140, ideal: 200)
+            .width(min: 160, ideal: 220)
 
             TableColumn("PID", value: \.pidNumber) { row in
                 Text(row.pid)
@@ -137,13 +147,25 @@ struct MainWindowView: View {
             .width(min: 80, ideal: 110)
 
             TableColumn("Address", value: \.addressText) { row in
-                Text(row.addressText)
-                    .lineLimit(1)
-                    .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
-                    .help(row.addressText)
-                    .accessibilityLabel(PortRow.spoken(row.addressText))
+                let scope = AddressScope(row.item?.addresses ?? [])
+                HStack(spacing: 5) {
+                    if row.isRunning {
+                        Image(systemName: scope.symbol)
+                            .font(.caption)
+                            .foregroundStyle(scope.color)
+                            .accessibilityHidden(true)
+                    }
+                    Text(row.addressText)
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
+                .help(row.isRunning ? "\(row.addressText)\n\(scope.help)" : row.addressText)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(row.isRunning ? "\(PortRow.spoken(row.addressText)), \(scope.help)" : PortRow.spoken(row.addressText))
             }
         }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: PortRow.ID.self) { ids in
             PortActionsMenu(rows: rows.filter { ids.contains($0.id) }, origin: .mainWindow)
         }

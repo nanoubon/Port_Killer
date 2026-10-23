@@ -15,34 +15,66 @@ struct SettingsView: View {
         return "\(short) (\(build))"
     }
 
+    private var appHeader: some View {
+        HStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Port Killer")
+                    .font(.title2.weight(.semibold))
+                Text("เวอร์ชัน \(version)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+
     var body: some View {
         Form {
+            Section {
+                appHeader
+            }
+
             Section("ทั่วไป") {
-                Toggle("Start at login", isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { viewModel.isLaunchAtLoginEnabled },
                     set: { viewModel.setLaunchAtLogin($0) }
-                ))
+                )) {
+                    Label { Text("Start at login") } icon: { SettingsIcon("power", color: .green) }
+                }
                 if let message = viewModel.launchAtLoginMessage {
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 if viewModel.launchAtLoginStatus == .requiresApproval {
-                    Button("เปิด Login Items") { viewModel.openLoginItemsSettings() }
+                    Button("เปิด Login Items…") { viewModel.openLoginItemsSettings() }
                 }
             }
 
             Section("การรีเฟรช") {
-                Toggle("รีเฟรชอัตโนมัติ", isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { viewModel.isAutoRefreshEnabled },
                     set: { viewModel.setAutoRefreshEnabled($0) }
-                ))
+                )) {
+                    Label { Text("รีเฟรชอัตโนมัติ") } icon: { SettingsIcon("arrow.clockwise", color: .blue) }
+                }
                 Stepper(value: Binding(
                     get: { Int(viewModel.refreshIntervalSeconds) },
                     set: { viewModel.setRefreshIntervalSeconds(Double($0)) }
                 ), in: 3...60) {
-                    LabeledContent("ทุก", value: "\(Int(viewModel.refreshIntervalSeconds)) วินาที")
-                        .monospacedDigit()
+                    LabeledContent {
+                        Text("\(Int(viewModel.refreshIntervalSeconds)) วินาที")
+                            .monospacedDigit()
+                    } label: {
+                        Label { Text("ทุก") } icon: { SettingsIcon("timer", color: .orange) }
+                    }
                 }
                 .disabled(!viewModel.isAutoRefreshEnabled)
                 Text("รีเฟรชเฉพาะตอนที่ popover หรือหน้าต่างหลักเปิดอยู่")
@@ -51,11 +83,18 @@ struct SettingsView: View {
             }
 
             Section("เกี่ยวกับ") {
-                LabeledContent("Port Killer", value: "เวอร์ชัน \(version)")
-                Link("GitHub", destination: Self.repositoryURL)
-                Text("เผยแพร่ภายใต้ MIT License")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                LabeledContent {
+                    Link(destination: Self.repositoryURL) {
+                        Label("เปิดใน GitHub", systemImage: "arrow.up.right.square")
+                    }
+                } label: {
+                    Label { Text("Source code") } icon: { SettingsIcon("chevron.left.forwardslash.chevron.right", color: .gray) }
+                }
+                LabeledContent {
+                    Text("MIT")
+                } label: {
+                    Label { Text("License") } icon: { SettingsIcon("doc.text", color: .gray) }
+                }
             }
         }
         .formStyle(.grouped)

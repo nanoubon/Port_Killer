@@ -9,6 +9,8 @@ struct MenuBarPopoverView: View {
     @FocusState private var searchFocused: Bool
 
     private static let rowHeight: CGFloat = 48
+    private static let rowSpacing: CGFloat = 2
+    private static let listPadding: CGFloat = 5
     private static let maxListHeight: CGFloat = 384
     private static let minListHeight: CGFloat = 200
 
@@ -16,6 +18,10 @@ struct MenuBarPopoverView: View {
         let rows = viewModel.rows(matching: searchText)
         VStack(spacing: 0) {
             header
+            if viewModel.hasLoadedLivePorts && viewModel.scanError == nil {
+                PortSummaryBar(shown: rows.count, query: searchText, compact: true)
+                    .padding(.top, -4)
+            }
             Divider()
             list(rows)
             Divider()
@@ -52,8 +58,12 @@ struct MenuBarPopoverView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .padding(.vertical, 6)
+            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(searchFocused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5)
+            )
 
             Button { viewModel.refresh() } label: {
                 Image(systemName: "arrow.clockwise")
@@ -89,13 +99,13 @@ struct MenuBarPopoverView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    LazyVStack(spacing: Self.rowSpacing) {
                         ForEach(rows) { row in
                             MenuPortRow(row: row)
                                 .frame(height: Self.rowHeight)
-                            Divider().padding(.leading, 10)
                         }
                     }
+                    .padding(Self.listPadding)
                 }
             }
         }
@@ -105,30 +115,39 @@ struct MenuBarPopoverView: View {
 
     private func listHeight(_ rows: [PortRow]) -> CGFloat {
         guard viewModel.hasLoadedLivePorts, viewModel.scanError == nil, !rows.isEmpty else { return Self.minListHeight }
-        return min(max(CGFloat(rows.count) * (Self.rowHeight + 1), Self.minListHeight), Self.maxListHeight)
+        let content = CGFloat(rows.count) * (Self.rowHeight + Self.rowSpacing) - Self.rowSpacing + Self.listPadding * 2
+        return min(max(content, Self.minListHeight), Self.maxListHeight)
     }
 
     private var footer: some View {
         HStack {
-            Button("เปิดหน้าต่าง") {
+            Button {
                 AppActivation.openMainWindow(openWindow)
+            } label: {
+                Label("เปิดหน้าต่าง", systemImage: "macwindow")
             }
             .keyboardShortcut("o")
             .help("เปิดหน้าต่างหลัก (⌘O)")
 
             Spacer()
 
-            Button("ตั้งค่า") {
+            Button {
                 AppActivation.openSettings(openSettings)
+            } label: {
+                Label("ตั้งค่า", systemImage: "gearshape")
             }
             .keyboardShortcut(",")
             .help("เปิดการตั้งค่า (⌘,)")
 
-            Button("ออก") { viewModel.quitApp() }
+            Button { viewModel.quitApp() } label: {
+                Label("ออก", systemImage: "power")
+            }
                 .keyboardShortcut("q")
                 .help("ออกจาก Port Killer (⌘Q)")
         }
         .buttonStyle(.borderless)
+        .labelStyle(.titleAndIcon)
+        .font(.callout)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
@@ -138,37 +157,61 @@ private struct MenuPortRow: View {
     @EnvironmentObject private var viewModel: PortViewModel
     let row: PortRow
 
+    @State private var hovering = false
+
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 2) {
-                if row.isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Pinned")
-                }
-                Text(row.port)
-                    .font(.system(.body, design: .monospaced).weight(.semibold))
-            }
-            .frame(width: 70, alignment: .leading)
+            ProcessIconView(
+                processName: row.processName,
+                path: row.item.flatMap { ProcessIcon.executablePath(pid: $0.pid, processName: $0.processName) },
+                size: 26,
+                isRunning: row.isRunning
+            )
 
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(row.processName).lineLimit(1).truncationMode(.tail)
-                    if row.isDocker { TagLabel("Docker") }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(row.processName)
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if row.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                    }
                 }
-                Text(row.isRunning ? "PID \(row.pid) · \(row.userText)" : "ไม่ได้รัน")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    if let item = row.item {
+                        let scope = AddressScope(item.addresses)
+                        Image(systemName: scope.symbol)
+                            .foregroundStyle(scope.color)
+                            .help(scope.help)
+                        Text("PID \(row.pid) · \(row.userText)")
+                        if row.isDocker {
+                            TagLabel("Docker")
+                        }
+                    } else {
+                        Text("ไม่ได้รัน")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             Spacer(minLength: 4)
+            PortBadge(port: row.port, isRunning: row.isRunning)
             trailing
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
+        .frame(maxHeight: .infinity)
+        .background(
+            hovering ? AnyShapeStyle(.quaternary.opacity(0.7)) : AnyShapeStyle(.clear),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
         .foregroundStyle(row.isRunning ? HierarchicalShapeStyle.primary : .secondary)
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .contextMenu { PortActionsMenu(rows: [row], origin: .menuBar) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.accessibilitySummary)
@@ -178,7 +221,10 @@ private struct MenuPortRow: View {
     @ViewBuilder
     private var trailing: some View {
         if let item = row.item, row.isReadOnly {
-            if let owner = row.ownerLabel { TagLabel(owner) }
+            Image(systemName: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("อ่านอย่างเดียว: เป็นของ \(row.ownerLabel ?? "ผู้ใช้อื่น")")
             Button { viewModel.copySudoKillCommand(for: item, origin: .menuBar) } label: {
                 Image(systemName: "doc.on.doc")
             }

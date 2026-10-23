@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Polished native UI: app icons per process, port badges tinted by IANA range, address scope icons (all interfaces or loopback), and a summary bar of listening, exposed, pinned, Docker, and read-only counts in the main window and popover.
+- Kill confirmation shows a header icon, a warning box, and process cards with icons.
+- Settings has an app header and System Settings-style row icons.
+
 ## [1.0.0] - 2026-10-23 (Unreleased until tagged)
 
 ### Added
